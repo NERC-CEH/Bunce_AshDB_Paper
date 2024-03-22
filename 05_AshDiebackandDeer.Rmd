@@ -1,0 +1,668 @@
+---
+title: "Ash Dieback and Deer Risk effects"
+author: "Fiona Seaton"
+date: "`r Sys.Date()`"
+output: 
+  html_document:
+    toc: true
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE, fig.dim = c(10,5))
+library(dplyr)
+library(brms)
+library(emmeans)
+library(tidybayes)
+library(ggplot2)
+theme_set(theme_classic())
+teal <- "#0383a4"
+two_cols <- c("#999999","#0072B2","#E69F00")
+model_loc <- "Outputs/Models/AshDB_Deer/"
+```
+
+```{r set-options, echo=FALSE, cache=FALSE}
+options(width = 300)
+```
+
+```{r, include = FALSE}
+par_summary <- function(x, digits = 3, ...){
+  summ <- par_summary(x)
+  fixef <- summ$fixed
+  rand1 <- summ$random[[1]]
+  rownames(rand1) <- paste0("SITE__",rownames(rand1))
+  if(length(summ$random)>1){
+    rand2 <- summ$random[[2]]
+    rownames(rand2) <- paste0("SITE:PLOT__",rownames(rand2))
+  } else{
+    rand2 <- rand1[0,]
+  }
+  cor_pars <- summ$cor_pars
+  spec_pars <- summ$spec_pars
+  if("mo" %in% names(summ)){
+    mo <- summ$mo
+    rownames(mo) <- paste0("smplx__", rownames(mo))
+    all <- do.call(rbind, list(fixef, rand1, rand2, spec_pars, mo))
+  } else{
+    all <- do.call(rbind, list(fixef, rand1, rand2, spec_pars))
+  }
+  all[,c("Bulk_ESS","Tail_ESS")] <- floor(all[,c("Bulk_ESS","Tail_ESS")])
+  knitr::kable(all, digits = digits, ...)
+}
+```
+
+
+
+
+```{r deer risk data read, cache = TRUE}
+deerrisk <- read.csv("Metadata/DEER_RISK.csv") %>%
+  mutate(DEER = ifelse(DEER == "None", "Low", DEER))
+```
+
+```{r data read}
+BRLEAF_SUMMARY <- read.csv("Outputs/Broadleaf_summary_metrics_meta_SP_DBH.csv")
+BRLEAF_SUMMARY <- BRLEAF_SUMMARY %>%
+  rename(DEERPLOTS = DEER) %>%
+  inner_join(deerrisk, by = "SITE_NO") %>%
+  left_join(ash_plots) %>%
+  filter(!is.na(ASHDIEBACK) & SITE_NO %in% ash_sites) %>%
+  mutate(ASHPRESENT = tidyr::replace_na(ASHPRESENT, FALSE)) %>%
+  mutate(ASHDIEBACK = ifelse(ASHDIEBACK == "Present", "Present",
+                             ifelse(ASHPRESENT & ASHDIEBACK == "Not present", 
+                                    "NotPresent", "NoAsh")),
+         YR = c("1971","2001","2022")[YEAR],
+         YDAY = (DAYOFYEAR - 200)/30,
+         across(ends_with("_COVER"), \(x) ifelse(x > 100, 1, 0.01*x),
+                .names = "PROP_{.col}"),
+         SITE = as.character(SITE_NO),
+         PLOT = paste(SITE_NO, PLOT_NO, sep = "_"),
+         DEER = factor(DEER, c("Low","Moderate","High"),
+                       ordered = TRUE))
+```
+
+With all 86 sites with deer data and ash present we have this many plots in each category:
+
+```{r}
+filter(BRLEAF_SUMMARY, YR == "2022") %>% janitor::tabyl(DEER, ASHDIEBACK) %>%
+  knitr::kable()
+```
+
+
+# Check priors for count models
+
+
+```{r count model sample prior}
+mod_pr <- prior(normal(2,1), class = "b", coef = "YR1971") +
+  prior(normal(2,1), class = "b", coef = "YR2001") +
+  prior(normal(2,1), class = "b", coef = "YR2022") +
+  prior(normal(0,1), class = "b") +
+  prior(dirichlet(1), class = "simo", coef = "moDEER1") +
+  prior(dirichlet(1), class = "simo", coef = "moDEER:YR20011") +
+  prior(dirichlet(1), class = "simo", coef = "moDEER:YR20221") +
+  prior(student_t(5, 0, 1), class = "sd")
+```
+
+```{r count check prior predictions, cache  = TRUE}
+test_mod <- brm(SPECIES_RICH ~ -1 + YR*mo(DEER)*ASHDIEBACK + YDAY + (1|SITE/PLOT),
+                data = BRLEAF_SUMMARY, family = "poisson",
+                prior = mod_pr, cores = 4, sample_prior = "only")
+plot(test_mod)
+pp_check(test_mod)
+pp_check(test_mod, "ecdf_overlay", ndraws = 20) +
+  scale_x_continuous(limits = c(0,200))
+```
+
+
+### Species richness
+
+```{r species richness model final}
+rich_mod <- brm(SPECIES_RICH ~ -1 + YR*mo(DEER)*ASHDIEBACK + YDAY + (1|SITE/PLOT),
+                data = BRLEAF_SUMMARY, family = "negbinomial",
+                prior = mod_pr, cores = 4, warmup = 2000, iter = 6000, thin = 4,
+                file = paste0(model_loc, "RICHNESS_NB"))
+par_summary(rich_mod)
+```
+
+```{r richness model plots}
+mcmc_plot(rich_mod, type = "rank_overlay")
+pp_check(rich_mod, type = "ecdf_overlay", ndraws = 20)
+```
+
+
+```{r emmeans richness pairwise comparison table}
+rich_emm <- emmeans(rich_mod, ~ ASHDIEBACK | DEER + YR)
+pairs(rich_emm) %>%
+  knitr::kable(digits = 3, caption = "Richness on log-scale")
+```
+
+```{r emmeans richness pairwise comparison table v2}
+pairs(rich_emm, type = "response") %>%
+  knitr::kable(digits = 3, caption = "Richness on response-scale")
+```
+
+```{r emmeans richness plot}
+rich_emm %>%
+  gather_emmeans_draws() %>%
+  mutate(Year = as.numeric(as.character(YR)),
+         .value = exp(.value)) %>%
+  ggplot(aes(x = Year, y = .value, colour = ASHDIEBACK, fill = ASHDIEBACK)) +
+  stat_lineribbon(alpha = 1/4) +
+  scale_fill_manual(values = two_cols,
+                    aesthetics = c("colour","fill"),
+                    name = "Ash Dieback") +
+  facet_wrap(~DEER) +
+  theme(axis.text = element_text(size = 11), strip.text = element_text(size = 12),
+        legend.text = element_text(size = 10), axis.title = element_text(size = 14)) +
+  labs(y = "Species Richness")
+```
+
+
+### Stem Count
+
+```{r stem model}
+stem_mod <- brm(STEM_COUNT ~ -1 + YR*mo(DEER)*ASHDIEBACK + YDAY + (1|SITE/PLOT),
+                data = BRLEAF_SUMMARY, family = "negbinomial",
+                prior = mod_pr, cores = 4, warmup = 2000, iter = 6000, thin = 4,
+                file = paste0(model_loc, "STEM_COUNT_NB"))
+par_summary(stem_mod)
+```
+
+```{r stem model plots}
+mcmc_plot(stem_mod, type = "rank_overlay")
+pp_check(stem_mod, type = "ecdf_overlay", ndraws = 20)
+```
+
+
+```{r emmeans stempairwise comparison table}
+stem_emm <- emmeans(stem_mod, ~ ASHDIEBACK | YR + DEER)
+pairs(stem_emm) %>%
+  knitr::kable(digits = 3, caption = "Stem Count on log-scale")
+```
+
+```{r emmeans stem pairwise comparison table v2}
+pairs(stem_emm, type = "response") %>%
+  knitr::kable(digits = 3, caption = "Stem Count on response-scale")
+```
+
+```{r emmeans stem plot}
+stem_emm %>%
+  gather_emmeans_draws() %>%
+  mutate(Year = as.numeric(as.character(YR)),
+         .value = exp(.value)) %>%
+  ggplot(aes(x = Year, y = .value, colour = ASHDIEBACK, fill = ASHDIEBACK)) +
+  stat_lineribbon(alpha = 1/4) +
+  scale_fill_manual(values = two_cols,
+                    aesthetics = c("colour","fill"),
+                    name = "Ash Dieback") + facet_wrap(~DEER) +
+  theme(axis.text = element_text(size = 11), strip.text = element_text(size = 12),
+        legend.text = element_text(size = 10), axis.title = element_text(size = 14)) +
+  labs(y = "Stem Count")
+```
+
+### Stem Richness
+
+```{r treerich model}
+treerich_mod <- brm(TREE_RICHNESS ~ -1 + YR*mo(DEER)*ASHDIEBACK + YDAY + (1|SITE/PLOT),
+                    data = BRLEAF_SUMMARY, family = "poisson",
+                    prior = mod_pr, cores = 4, warmup = 2000, iter = 6000, thin = 4,
+                    control = list(adapt_delta = 0.9),
+                    file = paste0(model_loc, "TREE_RICHNESS"))
+par_summary(treerich_mod)
+```
+
+```{r treerich model plots}
+mcmc_plot(treerich_mod, type = "rank_overlay")
+pp_check(treerich_mod, type = "ecdf_overlay", ndraws = 20)
+```
+
+
+```{r emmeans treerichpairwise comparison table}
+treerich_emm <- emmeans(treerich_mod, ~ ASHDIEBACK | YR + DEER)
+pairs(treerich_emm) %>%
+  knitr::kable(digits = 3, caption = "Tree Richness on log-scale")
+```
+
+```{r emmeans treerich pairwise comparison table v2}
+pairs(treerich_emm, type = "response") %>%
+  knitr::kable(digits = 3, caption = "Tree Richness on response-scale")
+```
+
+```{r emmeans treerich plot}
+treerich_emm %>%
+  gather_emmeans_draws() %>%
+  mutate(Year = as.numeric(as.character(YR)),
+         .value = exp(.value)) %>%
+  ggplot(aes(x = Year, y = .value, colour = ASHDIEBACK, fill = ASHDIEBACK)) +
+  stat_lineribbon(alpha = 1/4) +
+  scale_fill_manual(values = two_cols,
+                    aesthetics = c("colour","fill"),
+                    name = "Ash Dieback") + facet_wrap(~DEER) +
+  theme(axis.text = element_text(size = 11), strip.text = element_text(size = 12),
+        legend.text = element_text(size = 10), axis.title = element_text(size = 14)) +
+  labs(y = "Tree Richness")
+```
+
+
+# Gaussian distributed responses
+
+
+### Check priors for gaussian models
+
+
+```{r gauss model sample prior}
+mod_pr <- prior(normal(6,2), class = "b", coef = "YR1971") +
+  prior(normal(6,2), class = "b", coef = "YR2001") +
+  prior(normal(6,2), class = "b", coef = "YR2022") +
+  prior(normal(0,1), class = "b") +
+  prior(dirichlet(1), class = "simo", coef = "moDEER1") +
+  prior(dirichlet(1), class = "simo", coef = "moDEER:YR20011") +
+  prior(dirichlet(1), class = "simo", coef = "moDEER:YR20221") +
+  prior(student_t(5, 0, 3), class = "sd") +
+  prior(student_t(5, 0, 3), class = "sigma")
+```
+
+```{r gauss check prior predictions, cache = TRUE}
+test_mod <- brm(SPECIES_SHANNON ~ -1 + YR*mo(DEER)*ASHDIEBACK + YDAY + (1|SITE/PLOT),
+                data = BRLEAF_SUMMARY, family = "gaussian",
+                prior = mod_pr, cores = 4, sample_prior = "only")
+plot(test_mod, ask = FALSE)
+pp_check(test_mod)
+pp_check(test_mod, "ecdf_overlay", ndraws = 20)
+```
+
+### Species diversity - Shannon
+
+```{r species diversity model}
+shan_mod <- brm(SPECIES_SHANNON ~ -1 + YR*mo(DEER)*ASHDIEBACK + YDAY + (1|SITE/PLOT),
+                data = BRLEAF_SUMMARY, family = "gaussian",
+                prior = mod_pr, cores = 4, warmup = 2000, iter = 6000, thin = 4,
+                file = paste0(model_loc, "SPECIES_SHANNON"))
+par_summary(shan_mod)
+```
+
+```{r species diversity model plots}
+mcmc_plot(shan_mod, type = "rank_overlay")
+pp_check(shan_mod, type = "ecdf_overlay", ndraws = 20)
+```
+
+```{r emmeans shannon pairwise comparison table}
+shan_emm <- emmeans(shan_mod, ~ ASHDIEBACK | DEER + YR)
+pairs(shan_emm) %>%
+  knitr::kable(digits = 3)
+```
+
+```{r emmeans shannon plot}
+shan_emm %>%
+  gather_emmeans_draws() %>%
+  mutate(Year = as.numeric(as.character(YR))) %>%
+  ggplot(aes(x = Year, y = .value, colour = ASHDIEBACK, fill = ASHDIEBACK)) +
+  stat_lineribbon(alpha = 1/4) +
+  scale_fill_manual(values = two_cols,
+                    aesthetics = c("colour","fill"),
+                    name = "Ash Dieback") + facet_wrap(~DEER) +
+  theme(axis.text = element_text(size = 11), strip.text = element_text(size = 12),
+        legend.text = element_text(size = 10), axis.title = element_text(size = 14)) +
+  labs(y = "Shannon diversity")
+```
+
+
+# Constrained positive model
+
+### Mean basal area
+```{r}
+mod_pr <- prior(normal(2,1), class = "b", coef = "YR1971") +
+  prior(normal(2,1), class = "b", coef = "YR2001") +
+  prior(normal(2,1), class = "b", coef = "YR2022") +
+  prior(normal(0,1), class = "b", coef = "YDAY") +
+  prior(normal(0,1), class = "b", coef = "moDEER") +
+  prior(normal(0,1), class = "b", coef = "moDEER:YR2001") +
+  prior(normal(0,1), class = "b", coef = "moDEER:YR2022") +
+  prior(dirichlet(1), class = "simo", coef = "moDEER1") +
+  prior(dirichlet(1), class = "simo", coef = "moDEER:YR20011") +
+  prior(dirichlet(1), class = "simo", coef = "moDEER:YR20221") +
+  prior(student_t(5, 0, 1), class = "sd") +
+  prior(gamma(0.1,0.1), class = "shape") 
+```
+
+```{r}
+basal_mod <- brm(MEAN_BASAL_AREA ~ -1 + YR*mo(DEER)*ASHDIEBACK + YDAY  + (1|SITE/PLOT),
+                 data = BRLEAF_SUMMARY, family = "gamma",
+                 prior = mod_pr, cores = 4,
+                 file = paste0(model_loc, "MEAN_BASAL_AREA"))
+par_summary(basal_mod)
+```
+
+```{r basal model plots}
+mcmc_plot(basal_mod, type = "rank_overlay")
+pp_check(basal_mod, type = "ecdf_overlay", ndraws = 20)
+```
+
+```{r emmeans basal pairwise comparison table}
+basal_emm <- emmeans(basal_mod, ~ ASHDIEBACK | YR + DEER)
+pairs(basal_emm) %>%
+  knitr::kable(digits = 3, caption = "Mean basal area on log-scale")
+```
+
+```{r emmeans basal pairwise comparison table v2}
+pairs(basal_emm, type = "response") %>%
+  knitr::kable(digits = 3, caption = "Mean basal area on response-scale")
+```
+
+```{r emmeans basal plot}
+basal_emm %>%
+  gather_emmeans_draws() %>%
+  mutate(Year = as.numeric(as.character(YR)),
+         .value = exp(.value)) %>%
+  ggplot(aes(x = Year, y = .value, colour = ASHDIEBACK, fill = ASHDIEBACK)) +
+  stat_lineribbon(alpha = 1/4) +
+  scale_fill_manual(values = two_cols,
+                    aesthetics = c("colour","fill"),
+                    name = "Ash Dieback") + facet_wrap(~DEER) +
+  theme(axis.text = element_text(size = 11), strip.text = element_text(size = 12),
+        legend.text = element_text(size = 10), axis.title = element_text(size = 14)) +
+  labs(y = bquote("Mean basal area (cm"^2*")"))
+```
+
+
+# Cover models
+
+
+## Check priors for cover/gamma models
+
+
+```{r prop model sample prior}
+mod_pr <- prior(normal(2,1), class = "b", coef = "YR1971") +
+  prior(normal(2,1), class = "b", coef = "YR2001") +
+  prior(normal(2,1), class = "b", coef = "YR2022") +
+  prior(normal(0,1), class = "b") +
+  prior(dirichlet(1), class = "simo", coef = "moDEER1") +
+  prior(dirichlet(1), class = "simo", coef = "moDEER:YR20011") +
+  prior(dirichlet(1), class = "simo", coef = "moDEER:YR20221") +
+  prior(student_t(5, 0, 1), class = "sd") +
+  prior(gamma(0.1,0.1), class = "shape") +
+  prior(normal(0,1), class = "b", dpar = "hu") +
+  prior(normal(-1,1), class = "b", coef = "YR1971", dpar = "hu") +
+  prior(normal(-1,1), class = "b", coef = "YR2001", dpar = "hu") +
+  prior(normal(-1,1), class = "b", coef = "YR2022", dpar = "hu") +
+  prior(student_t(2, 0, 1), class = "sd", dpar = "hu")
+```
+
+```{r prop check prior predictions, cache = TRUE}
+test_mod <- brm(bf(FORB_COVER ~ -1 + YR*mo(DEER)*ASHDIEBACK + YDAY + (1|SITE/PLOT),
+                   hu ~  -1 + YR*mo(DEER)*ASHDIEBACK + YDAY + (1|SITE/PLOT)),
+                data = BRLEAF_SUMMARY, family = "hurdle_gamma",
+                prior = mod_pr, cores = 4, sample_prior = "only")
+plot(test_mod)
+pp_check(test_mod)
+pp_check(test_mod, "ecdf_overlay", ndraws = 20)
+```
+
+### Forb cover
+
+```{r forb model final}
+forb_mod <- brm(bf(FORB_COVER ~ -1 + YR*mo(DEER)*ASHDIEBACK + YDAY + (1|SITE/PLOT),
+                   hu ~  -1 + YR*mo(DEER)*ASHDIEBACK + YDAY + (1|SITE/PLOT)),
+                data = BRLEAF_SUMMARY, family = "hurdle_gamma",
+                prior = mod_pr, cores = 4, warmup = 2000, iter = 6000, thin = 4,
+                file = paste0(model_loc, "FORB_COVER"),
+                control = list(adapt_delta = 0.9))
+par_summary(forb_mod)
+```
+
+```{r forb model plots}
+mcmc_plot(forb_mod, type = "rank_overlay")
+pp_check(forb_mod, type = "ecdf_overlay", ndraws = 20)
+```
+
+```{r emmeans forb pairwise comparison table}
+forb_emm <- emmeans(forb_mod, ~ ASHDIEBACK | DEER + YR, epred = TRUE)
+pairs(forb_emm) %>%
+  knitr::kable(digits = 3, caption = "Forb cover")
+```
+
+```{r emmeans forb plot}
+forb_emm %>%
+  gather_emmeans_draws() %>%
+  mutate(Year = as.numeric(as.character(YR))) %>%
+  ggplot(aes(x = Year, y = .value, colour = ASHDIEBACK, fill = ASHDIEBACK)) +
+  stat_lineribbon(alpha = 1/4) +
+  scale_fill_manual(values = two_cols,
+                    aesthetics = c("colour","fill"),
+                    name = "Ash Dieback") + facet_wrap(~DEER) +
+  theme(axis.text = element_text(size = 11), strip.text = element_text(size = 12),
+        legend.text = element_text(size = 10), axis.title = element_text(size = 14)) +
+  labs(y = "Forb cover")
+```
+
+### Fern cover
+
+```{r fern model final}
+fern_mod <- brm(bf(FERN_COVER ~ -1 + YR*mo(DEER)*ASHDIEBACK + YDAY + (1|SITE/PLOT),
+                   hu ~  -1 + YR*mo(DEER)*ASHDIEBACK + YDAY + (1|SITE/PLOT)),
+                data = BRLEAF_SUMMARY, family = "hurdle_gamma",
+                prior = mod_pr, cores = 4, warmup = 2000, iter = 6000, thin = 4,
+                file = paste0(model_loc, "FERN_COVER"),
+                control = list(adapt_delta = 0.9))
+par_summary(fern_mod)
+```
+
+```{r fern model plots}
+mcmc_plot(fern_mod, type = "rank_overlay")
+pp_check(fern_mod, type = "ecdf_overlay", ndraws = 20)
+```
+
+```{r emmeans fern pairwise comparison table}
+fern_emm <- emmeans(fern_mod, ~ ASHDIEBACK | DEER + YR, epred = TRUE)
+pairs(fern_emm) %>%
+  knitr::kable(digits = 3, caption = "Fern cover")
+```
+
+```{r emmeans fern plot}
+fern_emm %>%
+  gather_emmeans_draws() %>%
+  mutate(Year = as.numeric(as.character(YR))) %>%
+  ggplot(aes(x = Year, y = .value, colour = ASHDIEBACK, fill = ASHDIEBACK)) +
+  stat_lineribbon(alpha = 1/4) +
+  scale_fill_manual(values = two_cols,
+                    aesthetics = c("colour","fill"),
+                    name = "Ash Dieback") + facet_wrap(~DEER) +
+  theme(axis.text = element_text(size = 11), strip.text = element_text(size = 12),
+        legend.text = element_text(size = 10), axis.title = element_text(size = 14)) +
+  labs(y = "Fern cover")
+```
+
+### Grass cover
+
+```{r grass model final}
+grass_mod <- brm(bf(GRASS_COVER ~ -1 + YR*mo(DEER)*ASHDIEBACK + YDAY + (1|SITE/PLOT),
+                    hu ~  -1 + YR*mo(DEER)*ASHDIEBACK + YDAY + (1|SITE/PLOT)),
+                 data = BRLEAF_SUMMARY, family = "hurdle_gamma",
+                 prior = mod_pr, cores = 4, warmup = 2000, iter = 6000, thin = 4,
+                 file = paste0(model_loc, "GRASS_COVER"))
+par_summary(grass_mod)
+```
+
+```{r grass model plots}
+mcmc_plot(grass_mod, type = "rank_overlay")
+pp_check(grass_mod, type = "ecdf_overlay", ndraws = 20)
+```
+
+```{r emmeans grass pairwise comparison table}
+grass_emm <- emmeans(grass_mod, ~ ASHDIEBACK | DEER + YR, epred = TRUE)
+pairs(grass_emm) %>%
+  knitr::kable(digits = 3, caption = "Grass cover")
+```
+
+```{r emmeans grass plot}
+grass_emm %>%
+  gather_emmeans_draws() %>%
+  mutate(Year = as.numeric(as.character(YR))) %>%
+  ggplot(aes(x = Year, y = .value, colour = ASHDIEBACK, fill = ASHDIEBACK)) +
+  stat_lineribbon(alpha = 1/4) +
+  scale_fill_manual(values = two_cols,
+                    aesthetics = c("colour","fill"),
+                    name = "Ash Dieback") + facet_wrap(~DEER) +
+  theme(axis.text = element_text(size = 11), strip.text = element_text(size = 12),
+        legend.text = element_text(size = 10), axis.title = element_text(size = 14)) +
+  labs(y = "Grass cover")
+```
+
+
+### Wood cover
+
+```{r wood model final}
+wood_mod <- brm(bf(WOOD_COVER ~ -1 + YR*mo(DEER)*ASHDIEBACK + YDAY + (1|SITE/PLOT),
+                   hu ~  -1 + YR*mo(DEER)*ASHDIEBACK + YDAY + (1|SITE/PLOT)),
+                data = BRLEAF_SUMMARY, family = "hurdle_gamma",
+                prior = mod_pr, cores = 4, warmup = 2000, iter = 6000, thin = 4,
+                file = paste0(model_loc, "WOOD_COVER"))
+par_summary(wood_mod)
+```
+
+```{r wood model plots}
+mcmc_plot(wood_mod, type = "rank_overlay")
+pp_check(wood_mod, type = "ecdf_overlay", ndraws = 20)
+```
+
+```{r emmeans wood pairwise comparison table vDEER}
+wood_emm <- emmeans(wood_mod, ~ DEER | ASHDIEBACK + YR, epred = TRUE)
+pairs(wood_emm) %>%
+  knitr::kable(digits = 3, caption = "Wood cover")
+```
+
+```{r emmeans wood pairwise comparison table}
+wood_emm <- emmeans(wood_mod, ~ ASHDIEBACK | DEER + YR, epred = TRUE)
+pairs(wood_emm) %>%
+  knitr::kable(digits = 3, caption = "Wood cover")
+```
+
+```{r emmeans wood plot}
+wood_emm %>%
+  gather_emmeans_draws() %>%
+  mutate(Year = as.numeric(as.character(YR))) %>%
+  ggplot(aes(x = Year, y = .value, colour = ASHDIEBACK, fill = ASHDIEBACK)) +
+  stat_lineribbon(alpha = 1/4) +
+  scale_fill_manual(values = two_cols,
+                    aesthetics = c("colour","fill"),
+                    name = "Ash Dieback") + facet_wrap(~DEER) +
+  theme(axis.text = element_text(size = 11), strip.text = element_text(size = 12), 
+        legend.text = element_text(size = 10), axis.title = element_text(size = 14)) +
+  labs(y = "Wood cover")
+```
+
+### Bramble cover
+
+```{r rubus model final}
+rubus_mod <- brm(bf(RUBUS ~ -1 + YR*mo(DEER)*ASHDIEBACK + YDAY + (1|SITE/PLOT),
+                    hu ~ -1 + YR*mo(DEER)*ASHDIEBACK + YDAY + (1|SITE/PLOT)),
+                 data = BRLEAF_SUMMARY, family = "hurdle_gamma",
+                 prior = mod_pr, cores = 4, warmup = 2000, iter = 6000, thin = 4,
+                 file = paste0(model_loc, "RUBUS"),
+                 control = list(adapt_delta = 0.9))
+par_summary(rubus_mod)
+```
+
+```{r rubus model plots}
+mcmc_plot(rubus_mod, type = "rank_overlay")
+pp_check(rubus_mod, type = "ecdf_overlay", ndraws = 20)
+```
+
+```{r emmeans rubus pairwise comparison table vDEER}
+rubus_emm <- emmeans(rubus_mod, ~ DEER | ASHDIEBACK + YR, epred = TRUE)
+pairs(rubus_emm) %>%
+  knitr::kable(digits = 3)
+```
+
+```{r emmeans rubus pairwise comparison table}
+rubus_emm <- emmeans(rubus_mod, ~ ASHDIEBACK | DEER + YR, epred= TRUE)
+pairs(rubus_emm) %>%
+  knitr::kable(digits = 3)
+```
+
+```{r emmeans rubus plot}
+rubus_emm %>%
+  gather_emmeans_draws() %>%
+  mutate(Year = as.numeric(as.character(YR))) %>%
+  ggplot(aes(x = Year, y = .value, colour = ASHDIEBACK, fill = ASHDIEBACK)) +
+  stat_lineribbon(alpha = 1/4) +
+  scale_fill_manual(values = two_cols,
+                    aesthetics = c("colour","fill"),
+                    name = "Ash Dieback") + facet_wrap(~DEER) +
+  theme(axis.text = element_text(size = 11), strip.text = element_text(size = 12), 
+        legend.text = element_text(size = 10), axis.title = element_text(size = 14)) +
+  labs(y = "Bramble cover")
+```
+
+
+# Site level richness
+
+```{r site level data prep}
+BRLEAF_SUMM_SITE <- read.csv("Outputs/Site level richness.csv")
+BRLEAF_SUMMARY <- BRLEAF_SUMM_SITE %>%
+  filter(SITE_NO %in% ash_sites) %>%
+  inner_join(deerrisk, by = "SITE_NO") %>%
+  mutate(YR = c("1971","2001","2022")[YEAR],
+         YDAY = (DAYOFYEAR - 200)/30,
+         SITE = as.character(SITE_NO),
+         EXP_SHANNON = exp(SPECIES_SHANNON),
+         INV_SIMPSON = 1/SPECIES_SIMPSON,
+         DEER = factor(DEER, c("Low","Moderate","High"),
+                       ordered = TRUE))
+```
+
+```{r count model sample prior site level}
+mod_pr <- prior(normal(2,1), class = "b", coef = "YR1971") +
+  prior(normal(2,1), class = "b", coef = "YR2001") +
+  prior(normal(2,1), class = "b", coef = "YR2022") +
+  prior(normal(0,1), class = "b") +
+  prior(dirichlet(1), class = "simo", coef = "moDEER1") +
+  prior(dirichlet(1), class = "simo", coef = "moDEER:YR20011") +
+  prior(dirichlet(1), class = "simo", coef = "moDEER:YR20221") +
+  prior(dirichlet(1), class = "simo", coef = "moDEER:YR2001:ASHDIEBACK1") +
+  prior(dirichlet(1), class = "simo", coef = "moDEER:YR2022:ASHDIEBACK1") +
+  prior(student_t(5, 0, 1), class = "sd")
+```
+
+```{r site rich mod run}
+site_rich_mod <- brm(SPECIES_RICH ~ -1 + YR*mo(DEER)*ASHDIEBACK + YDAY + (1|SITE),
+                     data = BRLEAF_SUMMARY, family = "negbinomial",
+                     prior = mod_pr, cores = 4, warmup = 2000, iter = 6000, thin = 4,
+                     file = paste0(model_loc, "SITERICH_NB"))
+par_summary(site_rich_mod)
+```
+
+```{r site rich mod plots}
+mcmc_plot(site_rich_mod, type = "rank_overlay")
+pp_check(site_rich_mod, type = "ecdf_overlay", ndraws = 20)
+```
+
+```{r emtrends site rich}
+emtrends(site_rich_mod, ~ DEER + YR, var = "ASHDIEBACK") %>%
+  knitr::kable(digits = 3, caption = "Ash dieback trend")
+```
+
+
+```{r emmeans site richness pairwise comparison table}
+siterich_emm <- emmeans(site_rich_mod, ~ YR | DEER + ASHDIEBACK,
+                        at = list(ASHDIEBACK = c(0,0.2,0.7)))
+pairs(siterich_emm, type = "response") %>%
+  knitr::kable(digits = 3, caption = "Site level richness on response-scale")
+```
+
+```{r emmeans site richness plot}
+siterich_emm %>%
+  gather_emmeans_draws() %>%
+  mutate(Year = as.numeric(as.character(YR)),
+         .value = exp(.value),
+         ASHDIEBACK = as.character(ASHDIEBACK)) %>%
+  ggplot(aes(x = Year, y = .value, colour = ASHDIEBACK, fill = ASHDIEBACK)) +
+  stat_lineribbon(alpha = 1/4) +
+  scale_fill_manual(values = two_cols,
+                    aesthetics = c("colour","fill"),
+                    name = "Ash Dieback") +
+  facet_wrap(~DEER) +
+  theme(axis.text = element_text(size = 11), strip.text = element_text(size = 12), 
+        legend.text = element_text(size = 10), axis.title = element_text(size = 14)) +
+  labs(y = "Site-level Species Richness")
+```
+
+

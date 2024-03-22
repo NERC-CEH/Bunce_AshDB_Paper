@@ -1,0 +1,447 @@
+---
+title: "Multivariate Models"
+author: "Fiona Seaton"
+date: "`r Sys.Date()`"
+output: 
+  html_document:
+    toc: true
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(message = FALSE, warning = FALSE, fig.dim = c(9,5))
+```
+
+
+```{r libraries}
+library(dplyr)
+library(brms)
+library(emmeans)
+library(tidybayes)
+library(ggplot2)
+theme_set(theme_classic())
+library(patchwork)
+teal <- "#0383a4"
+two_cols <- c("#999999","#0072B2","#E69F00")
+```
+
+```{r, include = FALSE}
+par_summary <- function(x, digits = 3, ...){
+  summ <- summary(x)
+  fixef <- summ$fixed
+  rand1 <- summ$random[[1]]
+  rownames(rand1) <- paste0("SITE__",rownames(rand1))
+  if(length(summ$random)>1){
+    rand2 <- summ$random[[2]]
+    rownames(rand2) <- paste0("SITE:PLOT__",rownames(rand2))
+  } else{
+    rand2 <- rand1[0,]
+  }
+  cor_pars <- summ$cor_pars
+  spec_pars <- summ$spec_pars
+  if("mo" %in% names(summ)){
+    mo <- summ$mo
+    rownames(mo) <- paste0("smplx__", rownames(mo))
+    all <- do.call(rbind, list(fixef, rand1, rand2, spec_pars, mo))
+  } else{
+    all <- do.call(rbind, list(fixef, rand1, rand2, spec_pars))
+  }
+  all[,c("Bulk_ESS","Tail_ESS")] <- floor(all[,c("Bulk_ESS","Tail_ESS")])
+  knitr::kable(all, digits = digits, ...)
+}
+```
+
+
+
+
+```{r deer risk data read, cache = TRUE}
+deerrisk <- read.csv("Metadata/DEER_RISK.csv") %>%
+  mutate(DEER = ifelse(DEER == "None", "Low", DEER))
+```
+
+```{r data read}
+BRLEAF_SUMMARY <- read.csv("Outputs/Broadleaf_summary_metrics_meta_SP_DBH.csv")
+BRLEAF_SUMMARY <- BRLEAF_SUMMARY %>%
+  rename(DEERPLOTS = DEER) %>%
+  inner_join(deerrisk, by = "SITE_NO") %>%
+  left_join(ash_plots) %>%
+  filter(!is.na(ASHDIEBACK) & SITE_NO %in% ash_sites) %>%
+  mutate(ASHPRESENT = tidyr::replace_na(ASHPRESENT, FALSE)) %>%
+  mutate(ASHDIEBACK = ifelse(ASHDIEBACK == "Present", "Present",
+                             ifelse(ASHPRESENT & ASHDIEBACK == "Not present", 
+                                    "NotPresent", "NoAsh")),
+         ASH = ifelse(ASHPRESENT | ASHDIEBACK == "Present", "Ash", "NoAsh"),
+         YR = c("1971","2001","2022")[YEAR],
+         YDAY = (DAYOFYEAR - 200)/30,
+         across(ends_with("_COVER"), \(x) ifelse(x > 100, 1, 0.01*x),
+                .names = "PROP_{.col}"),
+         SITE = as.character(SITE_NO),
+         PLOT = paste(SITE_NO, PLOT_NO, sep = "_"),
+         DEER = factor(DEER, c("Low","Moderate","High"),
+                       ordered = TRUE))
+BRLEAF_SUMMARY <- inner_join(BRLEAF_SUMMARY, Climate_data)
+```
+
+# Multivariate Model
+
+```{r mult model loc, include = FALSE}
+model_loc <- "Outputs/Models/Multivariate_Models/"
+```
+
+## Full model
+
+
+```{r model structure}
+model_structure <-
+  bf(SPECIES_RICH ~ -1 + YR*ASHDIEBACK*mo(DEER) + YDAY + FORB_COVER + RUBUS +
+       Winter_rainfall + Summer_rainfall + Winter_tasmin + Summer_tasmax + 
+       (1|SITE/PLOT), family = "negbinomial") +
+  bf(FORB_COVER ~ -1 + YR*ASHDIEBACK + YDAY + RUBUS + 
+       Winter_rainfall + Summer_rainfall + Winter_tasmin + Summer_tasmax + 
+       (1|SITE/PLOT),
+     hu ~ -1 + YR*ASHDIEBACK + YDAY + RUBUS + 
+       Winter_rainfall + Summer_rainfall + Winter_tasmin + Summer_tasmax + 
+       (1|SITE/PLOT), family = "hurdle_gamma") +
+  bf(RUBUS ~ -1 + YR*mo(DEER) + YDAY + 
+       Winter_rainfall + Summer_rainfall + Winter_tasmin + Summer_tasmax + 
+       (1|SITE/PLOT), 
+     hu ~ -1 + YR*mo(DEER) + YDAY + 
+       Winter_rainfall + Summer_rainfall + Winter_tasmin + Summer_tasmax + 
+       (1|SITE/PLOT), family = "hurdle_gamma") +
+  set_rescor(FALSE)
+```
+
+```{r specify priors}
+mod_pr <- 
+  prior(normal(2,1), class = "b", coef = "YR1971", resp = "FORBCOVER") +
+  prior(normal(2,1), class = "b", coef = "YR2001", resp = "FORBCOVER") +
+  prior(normal(2,1), class = "b", coef = "YR2022", resp = "FORBCOVER") +
+  prior(normal(0,1), class = "b", resp = "FORBCOVER") +
+  prior(student_t(5, 0, 1), class = "sd", resp = "FORBCOVER") +
+  prior(gamma(0.1,0.1), class = "shape", resp = "FORBCOVER") +
+  prior(normal(0,1), class = "b", dpar = "hu", resp = "FORBCOVER") +
+  prior(normal(-2,1), class = "b", coef = "YR1971", dpar = "hu", resp = "FORBCOVER") +
+  prior(normal(-2,1), class = "b", coef = "YR2001", dpar = "hu", resp = "FORBCOVER") +
+  prior(normal(-2,1), class = "b", coef = "YR2022", dpar = "hu", resp = "FORBCOVER") +
+  prior(student_t(2, 0, 1), class = "sd", dpar = "hu", resp = "FORBCOVER") +
+  prior(normal(2,1), class = "b", coef = "YR1971", resp = "RUBUS") +
+  prior(normal(2,1), class = "b", coef = "YR2001", resp = "RUBUS") +
+  prior(normal(2,1), class = "b", coef = "YR2022", resp = "RUBUS") +
+  prior(normal(0,1), class = "b", resp = "RUBUS") +
+  prior(dirichlet(1), class = "simo", resp = "RUBUS", coef = "moDEER1") +
+  prior(student_t(5, 0, 1), class = "sd", resp = "RUBUS") +
+  prior(gamma(0.1,0.1), class = "shape", resp = "RUBUS") +
+  prior(normal(0,1), class = "b", dpar = "hu", resp = "RUBUS") +
+  prior(normal(-1,1), class = "b", coef = "YR1971", dpar = "hu", resp = "RUBUS") +
+  prior(normal(-1,1), class = "b", coef = "YR2001", dpar = "hu", resp = "RUBUS") +
+  prior(normal(-1,1), class = "b", coef = "YR2022", dpar = "hu", resp = "RUBUS") +
+  prior(student_t(2, 0, 1), class = "sd", dpar = "hu", resp = "RUBUS") +
+  prior(dirichlet(1), class = "simo", dpar = "hu", resp = "RUBUS", coef = "moDEER1") +
+  prior(normal(3,1), class = "b", coef = "YR1971", resp = "SPECIESRICH") +
+  prior(normal(3,1), class = "b", coef = "YR2001", resp = "SPECIESRICH") +
+  prior(normal(3,1), class = "b", coef = "YR2022", resp = "SPECIESRICH") +
+  prior(normal(0,1), class = "b", resp = "SPECIESRICH") +
+  prior(student_t(5, 0, 1), class = "sd", resp = "SPECIESRICH") +
+  prior(dirichlet(1), class = "simo", resp = "SPECIESRICH", coef = "moDEER1") +
+  prior(gamma(0.1,0.1), class = "shape", resp = "SPECIESRICH")
+```
+
+
+```{r run full model}
+sem_mod <- brm(model_structure, data = BRLEAF_SUMMARY, prior = mod_pr,
+               iter = 6000, warmup = 2000, thin = 4, cores = 4,
+               file = paste0(model_loc, "SEM_SomeInt_020523"))
+par_summary(sem_mod)
+```
+
+```{r prior retrodictive check}
+pp_check(sem_mod, resp = "FORBCOVER", ndraws = 20, type = "ecdf_overlay") + 
+  scale_x_continuous(limits = c(0,300))
+pp_check(sem_mod, resp = "RUBUS", ndraws = 20, type = "ecdf_overlay") +
+  scale_x_continuous(limits = c(0,200))
+pp_check(sem_mod, resp = "SPECIESRICH", ndraws = 20, type = "ecdf_overlay") +
+  scale_x_continuous(limits = c(0,100))
+```
+
+
+```{r full model kfold}
+sem_mod <- add_criterion(sem_mod, "kfold", folds = "grouped", K = 10,
+                         group = "SITE",
+                         file = paste0(model_loc, "SEM_SomeInt_020523"))
+```
+
+## Run climate models
+
+### Model with only winter rainfall and winter tasmin
+
+```{r all winter model structure}
+model_structure <-
+  bf(SPECIES_RICH ~ -1 + YR*ASHDIEBACK*mo(DEER) + YDAY + FORB_COVER + RUBUS + 
+       Winter_rainfall + Winter_tasmin + 
+       (1|SITE/PLOT), family = "negbinomial") +
+  bf(FORB_COVER ~ -1 + YR*ASHDIEBACK + YDAY + RUBUS + 
+       Winter_rainfall + Winter_tasmin + 
+       (1|SITE/PLOT),
+     hu ~ -1 + YR*ASHDIEBACK + YDAY + RUBUS + 
+       Winter_rainfall + Winter_tasmin +
+       (1|SITE/PLOT), family = "hurdle_gamma") +
+  bf(RUBUS ~ -1 + YR*mo(DEER) + YDAY +  
+       Winter_rainfall + Winter_tasmin + 
+       (1|SITE/PLOT), 
+     hu ~ -1 + YR*mo(DEER) + YDAY + 
+       Winter_rainfall + Winter_tasmin + 
+       (1|SITE/PLOT), family = "hurdle_gamma") +
+  set_rescor(FALSE)
+```
+
+
+```{r run all winter model}
+sem_mod_win <- brm(model_structure, data = BRLEAF_SUMMARY, prior = mod_pr,
+                   iter = 6000, warmup = 2000, thin = 4, cores = 4,
+                   file = paste0(model_loc, "SEM_SomeInt_Win_020523"))
+par_summary(sem_mod_win)
+```
+
+```{r all winter model kfold}
+sem_mod_win <- add_criterion(sem_mod_win, "kfold", folds = "grouped", K = 10,
+                             group = "SITE",
+                             file = paste0(model_loc, "SEM_SomeInt_Win_020523"))
+```
+
+### Model with only summer rainfall and summer tasmax
+
+```{r all summer model structure}
+model_structure <-
+  bf(SPECIES_RICH ~ -1 + YR*ASHDIEBACK*mo(DEER) + YDAY + FORB_COVER + RUBUS + 
+       Summer_rainfall + Summer_tasmax + 
+       (1|SITE/PLOT), family = "negbinomial") +
+  bf(FORB_COVER ~ -1 + YR*ASHDIEBACK + YDAY + RUBUS + 
+       Summer_rainfall + Summer_tasmax + 
+       (1|SITE/PLOT),
+     hu ~ -1 + YR*ASHDIEBACK + YDAY + RUBUS +
+       Summer_rainfall + Summer_tasmax + 
+       (1|SITE/PLOT), family = "hurdle_gamma") +
+  bf(RUBUS ~ -1 + YR*mo(DEER) + YDAY + 
+       Summer_rainfall + Summer_tasmax + 
+       (1|SITE/PLOT), 
+     hu ~ -1 + YR*mo(DEER) + YDAY + 
+       Summer_rainfall + Summer_tasmax + 
+       (1|SITE/PLOT), family = "hurdle_gamma") +
+  set_rescor(FALSE)
+```
+
+```{r run all summer model}
+sem_mod_sum <- brm(model_structure, data = BRLEAF_SUMMARY, prior = mod_pr,
+                   iter = 6000, warmup = 2000, thin = 4, cores = 4,
+                   file = paste0(model_loc, "SEM_SomeInt_Sum_020523"))
+par_summary(sem_mod_sum)
+```
+
+```{r all summer model kfold}
+sem_mod_sum <- add_criterion(sem_mod_sum, "kfold", folds = "grouped", K = 10,
+                             group = "SITE",
+                             file = paste0(model_loc, "SEM_SomeInt_Sum_020523"))
+```
+
+
+### Model with no climate variables
+
+```{r model structure no climate}
+model_structure <-
+  bf(SPECIES_RICH ~ -1 + YR*ASHDIEBACK*mo(DEER) + YDAY + FORB_COVER + RUBUS + 
+       (1|SITE/PLOT), family = "negbinomial") +
+  bf(FORB_COVER ~ -1 + YR*ASHDIEBACK + YDAY + RUBUS + 
+       (1|SITE/PLOT),
+     hu ~ -1 + YR*ASHDIEBACK + YDAY + RUBUS + 
+       (1|SITE/PLOT), family = "hurdle_gamma") +
+  bf(RUBUS ~ -1 + YR*mo(DEER) + YDAY + 
+       (1|SITE/PLOT), 
+     hu ~ -1 + YR*mo(DEER) + YDAY + 
+       (1|SITE/PLOT), family = "hurdle_gamma") +
+  set_rescor(FALSE)
+```
+
+```{r run no climate model}
+sem_mod_noclim <- brm(model_structure, data = BRLEAF_SUMMARY, prior = mod_pr,
+                      iter = 6000, warmup = 2000, thin = 4, cores = 4,
+                      file = paste0(model_loc, "SEM_SomeInt_NoClim_020523"))
+par_summary(sem_mod_noclim)
+```
+
+```{r no climate model kfold}
+sem_mod_noclim <- add_criterion(sem_mod_noclim, "kfold", folds = "grouped", K = 10,
+                                group = "SITE",
+                                file = paste0(model_loc, "SEM_SomeInt_NoClim_020523"))
+```
+
+
+
+## Compare models with kfold
+
+```{r kfold compare}
+loo_compare(sem_mod, sem_mod_win, sem_mod_sum, sem_mod_noclim,
+            criterion = "kfold") %>%
+  knitr::kable(digits = 3)
+```
+
+
+
+## Test impact of removing direct deer and ash dieback links to species richness
+
+Have to respecify priors to remove the deer simo prior on species richness:
+
+```{r respecify priors}
+mod_pr <- 
+  prior(normal(2,1), class = "b", coef = "YR1971", resp = "FORBCOVER") +
+  prior(normal(2,1), class = "b", coef = "YR2001", resp = "FORBCOVER") +
+  prior(normal(2,1), class = "b", coef = "YR2022", resp = "FORBCOVER") +
+  prior(normal(0,1), class = "b", resp = "FORBCOVER") +
+  prior(student_t(5, 0, 1), class = "sd", resp = "FORBCOVER") +
+  prior(gamma(0.1,0.1), class = "shape", resp = "FORBCOVER") +
+  prior(normal(0,1), class = "b", dpar = "hu", resp = "FORBCOVER") +
+  prior(normal(-2,1), class = "b", coef = "YR1971", dpar = "hu", resp = "FORBCOVER") +
+  prior(normal(-2,1), class = "b", coef = "YR2001", dpar = "hu", resp = "FORBCOVER") +
+  prior(normal(-2,1), class = "b", coef = "YR2022", dpar = "hu", resp = "FORBCOVER") +
+  prior(student_t(2, 0, 1), class = "sd", dpar = "hu", resp = "FORBCOVER") +
+  prior(normal(2,1), class = "b", coef = "YR1971", resp = "RUBUS") +
+  prior(normal(2,1), class = "b", coef = "YR2001", resp = "RUBUS") +
+  prior(normal(2,1), class = "b", coef = "YR2022", resp = "RUBUS") +
+  prior(normal(0,1), class = "b", resp = "RUBUS") +
+  prior(dirichlet(1), class = "simo", resp = "RUBUS", coef = "moDEER1") +
+  prior(student_t(5, 0, 1), class = "sd", resp = "RUBUS") +
+  prior(gamma(0.1,0.1), class = "shape", resp = "RUBUS") +
+  prior(normal(0,1), class = "b", dpar = "hu", resp = "RUBUS") +
+  prior(normal(-1,1), class = "b", coef = "YR1971", dpar = "hu", resp = "RUBUS") +
+  prior(normal(-1,1), class = "b", coef = "YR2001", dpar = "hu", resp = "RUBUS") +
+  prior(normal(-1,1), class = "b", coef = "YR2022", dpar = "hu", resp = "RUBUS") +
+  prior(student_t(2, 0, 1), class = "sd", dpar = "hu", resp = "RUBUS") +
+  prior(dirichlet(1), class = "simo", dpar = "hu", resp = "RUBUS", coef = "moDEER1") +
+  prior(normal(3,1), class = "b", coef = "YR1971", resp = "SPECIESRICH") +
+  prior(normal(3,1), class = "b", coef = "YR2001", resp = "SPECIESRICH") +
+  prior(normal(3,1), class = "b", coef = "YR2022", resp = "SPECIESRICH") +
+  prior(normal(0,1), class = "b", resp = "SPECIESRICH") +
+  prior(student_t(5, 0, 1), class = "sd", resp = "SPECIESRICH") +
+  prior(gamma(0.1,0.1), class = "shape", resp = "SPECIESRICH")
+```
+
+
+### Model with no deer 
+
+```{r no deer model structure}
+model_structure <-
+  bf(SPECIES_RICH ~ -1 + YR*ASHDIEBACK + YDAY + FORB_COVER + RUBUS + 
+       Winter_rainfall + Winter_tasmin + 
+       (1|SITE/PLOT), family = "negbinomial") +
+  bf(FORB_COVER ~ -1 + YR*ASHDIEBACK + YDAY + RUBUS +
+       Winter_rainfall + Winter_tasmin + 
+       (1|SITE/PLOT),
+     hu ~ -1 + YR*ASHDIEBACK + YDAY + RUBUS +
+       Winter_rainfall + Winter_tasmin +
+       (1|SITE/PLOT), family = "hurdle_gamma") +
+  bf(RUBUS ~ -1 + YR*mo(DEER) + YDAY + 
+       Winter_rainfall + Winter_tasmin + 
+       (1|SITE/PLOT), 
+     hu ~ -1 + YR*mo(DEER) + YDAY + 
+       Winter_rainfall + Winter_tasmin + 
+       (1|SITE/PLOT), family = "hurdle_gamma") +
+  set_rescor(FALSE)
+```
+
+
+```{r run no deer model}
+sem_modw <- brm(model_structure, data = BRLEAF_SUMMARY, prior = mod_pr,
+               iter = 6000, warmup = 2000, thin = 4, cores = 4,
+               file = paste0(model_loc, "SEM_SomeInt_Win_nodeer_030523"))
+par_summary(sem_modw)
+```
+
+
+```{r no deer model kfold}
+sem_modw <- add_criterion(sem_modw, "kfold", folds = "grouped", K = 10,
+                          group = "SITE",
+                          file = paste0(model_loc, "SEM_SomeInt_Win_nodeer_030523"))
+```
+
+### Model with no dieback
+
+
+```{r no dieback model structure}
+model_structure <-
+  bf(SPECIES_RICH ~ -1 + YR*mo(DEER)*ASH + YDAY + FORB_COVER + RUBUS + 
+       Winter_rainfall + Winter_tasmin + 
+       (1|SITE/PLOT), family = "negbinomial") +
+  bf(FORB_COVER ~ -1 + YR*ASHDIEBACK + YDAY + RUBUS +
+       Winter_rainfall + Winter_tasmin + 
+       (1|SITE/PLOT),
+     hu ~ -1 + YR*ASHDIEBACK + YDAY + RUBUS +
+       Winter_rainfall + Winter_tasmin +
+       (1|SITE/PLOT), family = "hurdle_gamma") +
+  bf(RUBUS ~ -1 + YR*mo(DEER) + YDAY + 
+       Winter_rainfall + Winter_tasmin + 
+       (1|SITE/PLOT), 
+     hu ~ -1 + YR*mo(DEER) + YDAY + 
+       Winter_rainfall + Winter_tasmin + 
+       (1|SITE/PLOT), family = "hurdle_gamma") +
+  set_rescor(FALSE)
+```
+
+
+```{r run no dieback model}
+sem_modd <- brm(model_structure, data = BRLEAF_SUMMARY, prior = mod_pr +
+  prior(dirichlet(1), class = "simo", resp = "SPECIESRICH", coef = "moDEER1") ,
+               iter = 6000, warmup = 2000, thin = 4, cores = 4,
+               file = paste0(model_loc, "SEM_SomeInt_Win_noDB_190523"))
+par_summary(sem_modd)
+```
+
+```{r no dieback model kfold}
+sem_modd <- add_criterion(sem_modd, "kfold", folds = "grouped", K = 10,
+                         group = "SITE",
+                         file = paste0(model_loc, "SEM_SomeInt_Win_noDB_190523"))
+```
+
+
+### Model with no dieback or deer
+
+```{r no deer or dieback model structure}
+model_structure <-
+  bf(SPECIES_RICH ~ -1 + YR*ASH + YDAY + FORB_COVER + RUBUS + 
+       Winter_rainfall + Winter_tasmin + 
+       (1|SITE/PLOT), family = "negbinomial") +
+  bf(FORB_COVER ~ -1 + YR*ASHDIEBACK + YDAY + RUBUS +
+       Winter_rainfall + Winter_tasmin + 
+       (1|SITE/PLOT),
+     hu ~ -1 + YR*ASHDIEBACK + YDAY + RUBUS +
+       Winter_rainfall + Winter_tasmin +
+       (1|SITE/PLOT), family = "hurdle_gamma") +
+  bf(RUBUS ~ -1 + YR*mo(DEER) + YDAY + 
+       Winter_rainfall + Winter_tasmin + 
+       (1|SITE/PLOT), 
+     hu ~ -1 + YR*mo(DEER) + YDAY + 
+       Winter_rainfall + Winter_tasmin + 
+       (1|SITE/PLOT), family = "hurdle_gamma") +
+  set_rescor(FALSE)
+```
+
+
+```{r run no deer or dieback model}
+sem_modn <- brm(model_structure, data = BRLEAF_SUMMARY, prior = mod_pr,
+               iter = 6000, warmup = 2000, thin = 4, cores = 4,
+               file = paste0(model_loc, "SEM_SomeInt_Win_noDeerDB_190523"))
+par_summary(sem_modn)
+```
+
+
+```{r no deer or dieback model kfold}
+sem_modn <- add_criterion(sem_modn, "kfold", folds = "grouped", K = 10,
+                         group = "SITE",
+                         file = paste0(model_loc, "SEM_SomeInt_Win_noDeerDB_190523"))
+```
+
+## Model comparison with kfold
+
+```{r}
+loo_compare(sem_mod_win, sem_modw, sem_modd, sem_modn,
+            criterion = "kfold") %>%
+  knitr::kable(digits = 3)
+```
+
