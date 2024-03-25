@@ -84,7 +84,7 @@ GRFLORA_SITE <- GRFLORA_ALL %>%
             .groups = "drop")
 
 # Survey dates
-plot_locdate <- PLDATA22 %>%
+plot_date <- PLDATA22 %>%
   filter(CODE_GROUP_DESCRIPTION == "Survey start date") %>%
   select(SITE_NO, PLOT_NO, SURVEY_START = DESCRIPTION) %>%
   mutate(Date = lubridate::parse_date_time(SURVEY_START, "d-b-y"),
@@ -129,7 +129,7 @@ ALLPLOTS_DISEASE <- PLDATA22 %>%
   distinct()
 
 # Combine date and disease data
-plot_meta <- full_join(plot_locdate, ALLPLOTS_DISEASE, 
+plot_meta <- full_join(plot_date, ALLPLOTS_DISEASE, 
                        by = c("SITE_NO","PLOT_NO"),
                        multiple = "all")
 BLEAF_META <- plot_meta %>%
@@ -221,71 +221,40 @@ write.csv(BRLEAF_SUMMARY, "Outputs/Broadleaf_summary_metrics.csv",
           row.names = FALSE)
 
 # Climate data ####
+Site_locs <- PLDATA7101 %>%
+  select(SITE, EASTING, NORTHING) %>%
+  filter(!is.na(EASTING)) %>%
+  mutate(EASTING = EASTING*100, NORTHING = NORTHING*100) %>%
+  sf::st_as_sf(coords = c("EASTING", "NORTHING"), crs = 27700,
+               remove = FALSE)
 # Get 2001 data
 climdatfolder <- "INSERT NAME OF FOLDER HERE"
 # 2001 rainfall
 rain01 <- terra::rast(paste0(climdatfolder, "rainfall_hadukgrid_uk_1km_seas-20y_198101-200012.nc"))
 
-pl_rain01 <- terra::extract(rain01, plot_locdate) %>%
+pl_rain01 <- terra::extract(rain01, Site_locs) %>%
   rename(Winter_rainfall_2001 = rainfall_1, Summer_rainfall_2001 = rainfall_3) %>%
-  bind_cols(plot_locdate) %>%
-  select(SITE_NO, PLOT_NO, POINT_X, POINT_Y, Date, Year, 
+  bind_cols(Site_locs) %>%
+  select(SITE, EASTING, NORTHING, 
          Winter_rainfall_2001, Summer_rainfall_2001)
-
-pl_rain01_NAs <- terra::extract(rain01, 
-                                plot_locdate[is.na(pl_rain01$Winter_rainfall_2001),],
-                                method = "bilinear") %>%
-  rename(Winter_rainfall_2001 = rainfall_1, Summer_rainfall_2001 = rainfall_3) %>%
-  bind_cols(plot_locdate[is.na(pl_rain01$Winter_rainfall_2001),]) %>%
-  select(SITE_NO, PLOT_NO, POINT_X, POINT_Y, Date, Year, 
-         Winter_rainfall_2001, Summer_rainfall_2001)
-
-pl_rain01 <- pl_rain01 %>%
-  filter(!is.na(Winter_rainfall_2001)) %>%
-  bind_rows(pl_rain01_NAs)
 
 # 2001 min temp
 tasmin01 <- terra::rast(paste0(climdatfolder, "tasmin_hadukgrid_uk_1km_seas-20y_198101-200012.nc"))
 
-pl_tmin01 <- terra::extract(tasmin01, plot_locdate) %>%
+pl_tmin01 <- terra::extract(tasmin01, Site_locs) %>%
   rename(Winter_tasmin_2001 = tasmin_1) %>%
-  bind_cols(plot_locdate) %>%
-  select(SITE_NO, PLOT_NO, POINT_X, POINT_Y, Date, Year, 
+  bind_cols(Site_locs) %>%
+  select(SITE, EASTING, NORTHING, 
          Winter_tasmin_2001)
-
-pl_tmin01_NAs <- terra::extract(tasmin01, 
-                                plot_locdate[is.na(pl_tmin01$Winter_tasmin_2001),],
-                                method = "bilinear") %>%
-  rename(Winter_tasmin_2001 = tasmin_1) %>%
-  bind_cols(plot_locdate[is.na(pl_tmin01$Winter_tasmin_2001),]) %>%
-  select(SITE_NO, PLOT_NO, POINT_X, POINT_Y, Date, Year, 
-         Winter_tasmin_2001)
-
-pl_tmin01 <- pl_tmin01 %>%
-  filter(!is.na(Winter_tasmin_2001)) %>%
-  bind_rows(pl_tmin01_NAs)
-
 
 # 2001 max temp
 tasmax01 <- terra::rast(paste0(climdatfolder, "tasmax_hadukgrid_uk_1km_seas-20y_198101-200012.nc"))
 
-pl_tmax01 <- terra::extract(tasmax01, plot_locdate) %>%
+pl_tmax01 <- terra::extract(tasmax01, Site_locs) %>%
   rename(Summer_tasmax_2001 = tasmax_3) %>%
-  bind_cols(plot_locdate) %>%
-  select(SITE_NO, PLOT_NO, POINT_X, POINT_Y, Date, Year, 
+  bind_cols(Site_locs) %>%
+  select(SITE, EASTING, NORTHING, 
          Summer_tasmax_2001)
-
-pl_tmax01_NAs <- terra::extract(tasmax01, 
-                                plot_locdate[is.na(pl_tmax01$Summer_tasmax_2001),],
-                                method = "bilinear") %>%
-  rename(Summer_tasmax_2001 = tasmax_3) %>%
-  bind_cols(plot_locdate[is.na(pl_tmax01$Summer_tasmax_2001),]) %>%
-  select(SITE_NO, PLOT_NO, POINT_X, POINT_Y, Date, Year, 
-         Summer_tasmax_2001)
-
-pl_tmax01 <- pl_tmax01 %>%
-  filter(!is.na(Summer_tasmax_2001)) %>%
-  bind_rows(pl_tmax01_NAs)
 
 # Combine 2001 climate data
 pl_clim01 <- full_join(pl_rain01, pl_tmin01) %>%
@@ -294,68 +263,50 @@ pl_clim01 <- full_join(pl_rain01, pl_tmin01) %>%
 
 # 1971 climate data
 rain71 <- lapply(1951:1970, function(x){
-  rain_dat <- terra::rast(paste0(climdatfolder, "Annual_4170/",
+  rain_dat <- terra::rast(paste0(climdatfolder, "Seasonal_PerYear/",
                                  "rainfall_hadukgrid_uk_1km_seas_",
                                  x,"01-",x,"12.nc"))
-  pl_rain <- terra::extract(rain_dat, plot_locdate) %>%
-    bind_cols(plot_locdate)
-  pl_rain_NAs <- terra::extract(rain_dat, plot_locdate[is.na(pl_rain$rainfall_1),],
-                                method = "bilinear") %>%
-    bind_cols(plot_locdate[is.na(pl_rain$rainfall_1),])
-  pl_rain <- pl_rain %>%
-    filter(!is.na(rainfall_1)) %>%
-    bind_rows(pl_rain_NAs) %>%
+  pl_rain <- terra::extract(rain_dat, Site_locs) %>%
+    bind_cols(Site_locs) %>%
     mutate(Year = x) %>%
-    select(SITE_NO, PLOT_NO, POINT_X, POINT_Y, Date, Year,
+    select(SITE, EASTING, NORTHING, Year,
            Winter_rainfall_1971 = rainfall_1, Summer_rainfall_1971 = rainfall_3)
 })
 rain71_df <- do.call(rbind, rain71) %>%
-  group_by(SITE_NO, PLOT_NO, POINT_X, POINT_Y, Date) %>%
+  group_by(SITE, EASTING, NORTHING) %>%
   summarise(Winter_rainfall_1971 = mean(Winter_rainfall_1971),
             Summer_rainfall_1971 = mean(Summer_rainfall_1971),
             .groups = "drop")
 
 # tasmin
 tmin71 <- lapply(1951:1970, function(x){
-  tmin_dat <- terra::rast(paste0(climdatfolder, "Annual_4170/",
+  tmin_dat <- terra::rast(paste0(climdatfolder, "Seasonal_PerYear/",
                                  "tasmin_hadukgrid_uk_1km_seas_",
                                  x,"01-",x,"12.nc"))
-  pl_tmin <- terra::extract(tmin_dat, plot_locdate) %>%
-    bind_cols(plot_locdate)
-  pl_tmin_NAs <- terra::extract(tmin_dat, plot_locdate[is.na(pl_tmin$tasmin_1),],
-                                method = "bilinear") %>%
-    bind_cols(plot_locdate[is.na(pl_tmin$tasmin_1),])
-  pl_tmin <- pl_tmin %>%
-    filter(!is.na(tasmin_1)) %>%
-    bind_rows(pl_tmin_NAs) %>%
+  pl_tmin <- terra::extract(tmin_dat, Site_locs) %>%
+    bind_cols(Site_locs) %>%
     mutate(Year = x) %>%
-    select(SITE_NO, PLOT_NO, POINT_X, POINT_Y, Date, Year,
+    select(SITE_NO, EASTING, NORTHING, Year,
            Winter_tasmin_1971 = tasmin_1)
 })
 tmin71_df <- do.call(rbind, tmin71) %>%
-  group_by(SITE_NO, PLOT_NO, POINT_X, POINT_Y, Date) %>%
+  group_by(SITE_NO, EASTING, NORTHING) %>%
   summarise(Winter_tasmin_1971 = mean(Winter_tasmin_1971),
             .groups = "drop")
 
 # tasmax
 tmax71 <- lapply(1951:1970, function(x){
-  tmax_dat <- terra::rast(paste0(climdatfolder, "Annual_4170/",
+  tmax_dat <- terra::rast(paste0(climdatfolder, "Seasonal_PerYear/",
                                  "tasmax_hadukgrid_uk_1km_seas_",
                                  x,"01-",x,"12.nc"))
-  pl_tmax <- terra::extract(tmax_dat, plot_locdate) %>%
-    bind_cols(plot_locdate)
-  pl_tmax_NAs <- terra::extract(tmax_dat, plot_locdate[is.na(pl_tmax$tasmax_1),],
-                                method = "bilinear") %>%
-    bind_cols(plot_locdate[is.na(pl_tmax$tasmax_1),])
-  pl_tmax <- pl_tmax %>%
-    filter(!is.na(tasmax_1)) %>%
-    bind_rows(pl_tmax_NAs) %>%
+  pl_tmax <- terra::extract(tmax_dat, Site_locs) %>%
+    bind_cols(Site_locs) %>%
     mutate(Year = x) %>%
-    select(SITE_NO, PLOT_NO, POINT_X, POINT_Y, Date, Year,
+    select(SITE, EASTING, NORTHING, Year,
            Summer_tasmax_1971 = tasmax_3)
 })
 tmax71_df <- do.call(rbind, tmax71) %>%
-  group_by(SITE_NO, PLOT_NO, POINT_X, POINT_Y, Date) %>%
+  group_by(SITE, EASTING, NORTHING) %>%
   summarise(Summer_tasmax_1971 = mean(Summer_tasmax_1971),
             .groups = "drop")
 
@@ -364,72 +315,61 @@ clim71 <- full_join(rain71_df, tmin71_df) %>%
   full_join(tmax71_df)
 
 # Most recent survey
+# get year of survey as it varies
+Site_locs22 <-  inner_join(Site_locs, plot_date %>%
+                             filter(Survey == "2022") %>%
+                             select(SITE = SITE_NO, Year) %>%
+                             distinct() %>% 
+                             # site 63 was visited twice, using average for up to 2020
+                             filter(SITE != 63 | Year < 2022) )
 rain22 <- lapply(1998:2021, function(x){
-  rain_dat <- terra::rast(paste0(climdatfolder, "Annual/",
+  rain_dat <- terra::rast(paste0(climdatfolder, "Seasonal_PerYear/",
                                  "rainfall_hadukgrid_uk_1km_seas_",
                                  x,"01-",x,"12.nc"))
-  pl_rain <- terra::extract(rain_dat, plot_locdate) %>%
-    bind_cols(plot_locdate)
-  pl_rain_NAs <- terra::extract(rain_dat, plot_locdate[is.na(pl_rain$rainfall_1),],
-                                method = "bilinear") %>%
-    bind_cols(plot_locdate[is.na(pl_rain$rainfall_1),])
-  pl_rain <- pl_rain %>%
-    filter(!is.na(rainfall_1)) %>%
-    bind_rows(pl_rain_NAs) %>%
+  pl_rain <- terra::extract(rain_dat, Site_locs22) %>%
+    bind_cols(Site_locs22) %>%
     mutate(Clim_Year = x) %>%
-    select(SITE_NO, PLOT_NO, POINT_X, POINT_Y, Date, Year, Clim_Year,
+    select(SITE, EASTING, NORTHING, Year, Clim_Year,
            Winter_rainfall_2022 = rainfall_1, Summer_rainfall_2022 = rainfall_3)
 })
 rain22_df <- do.call(rbind, rain22) %>%
   filter(Clim_Year < Year & Clim_Year >= (Year-20)) %>%
-  group_by(SITE_NO, PLOT_NO, POINT_X, POINT_Y, Date, Year) %>%
+  group_by(SITE, EASTING, NORTHING) %>%
   summarise(Winter_rainfall_2022 = mean(Winter_rainfall_2022),
             Summer_rainfall_2022 = mean(Summer_rainfall_2022),
             .groups = "drop")
 
 # tasmin
 tmin22 <- lapply(1998:2021, function(x){
-  tmin_dat <- terra::rast(paste0(climdatfolder, "Annual/",
+  tmin_dat <- terra::rast(paste0(climdatfolder, "Seasonal_PerYear/",
                                  "tasmin_hadukgrid_uk_1km_seas_",
                                  x,"01-",x,"12.nc"))
-  pl_tmin <- terra::extract(tmin_dat, plot_locdate) %>%
-    bind_cols(plot_locdate)
-  pl_tmin_NAs <- terra::extract(tmin_dat, plot_locdate[is.na(pl_tmin$tasmin_1),],
-                                method = "bilinear") %>%
-    bind_cols(plot_locdate[is.na(pl_tmin$tasmin_1),])
-  pl_tmin <- pl_tmin %>%
-    filter(!is.na(tasmin_1)) %>%
-    bind_rows(pl_tmin_NAs) %>%
+  pl_tmin <- terra::extract(tmin_dat, Site_locs22) %>%
+    bind_cols(Site_locs22) %>%
     mutate(Clim_Year = x) %>%
-    select(SITE_NO, PLOT_NO, POINT_X, POINT_Y, Date, Year, Clim_Year,
+    select(SITE_NO, EASTING, NORTHING, Year, Clim_Year,
            Winter_tasmin_2022 = tasmin_1)
 })
 tmin22_df <- do.call(rbind, tmin22) %>%
   filter(Clim_Year < Year & Clim_Year >= (Year-20)) %>%
-  group_by(SITE_NO, PLOT_NO, POINT_X, POINT_Y, Date, Year) %>%
+  group_by(SITE_NO, EASTING, NORTHING) %>%
   summarise(Winter_tasmin_2022 = mean(Winter_tasmin_2022),
             .groups = "drop")
 
 # tasmax
 tmax22 <- lapply(1998:2021, function(x){
-  tmax_dat <- terra::rast(paste0(climdatfolder, "Annual/",
+  tmax_dat <- terra::rast(paste0(climdatfolder, "Seasonal_PerYear/",
                                  "tasmax_hadukgrid_uk_1km_seas_",
                                  x,"01-",x,"12.nc"))
-  pl_tmax <- terra::extract(tmax_dat, plot_locdate) %>%
-    bind_cols(plot_locdate)
-  pl_tmax_NAs <- terra::extract(tmax_dat, plot_locdate[is.na(pl_tmax$tasmax_1),],
-                                method = "bilinear") %>%
-    bind_cols(plot_locdate[is.na(pl_tmax$tasmax_1),])
-  pl_tmax <- pl_tmax %>%
-    filter(!is.na(tasmax_1)) %>%
-    bind_rows(pl_tmax_NAs) %>%
+  pl_tmax <- terra::extract(tmax_dat, Site_locs22) %>%
+    bind_cols(Site_locs22) %>%
     mutate(Clim_Year = x) %>%
-    select(SITE_NO, PLOT_NO, POINT_X, POINT_Y, Date, Year, Clim_Year,
+    select(SITE_NO, EASTING, NORTHING, Year, Clim_Year,
            Summer_tasmax_2022 = tasmax_3)
 })
 tmax22_df <- do.call(rbind, tmax22) %>%
   filter(Clim_Year < Year & Clim_Year >= (Year-20)) %>%
-  group_by(SITE_NO, PLOT_NO, POINT_X, POINT_Y, Date, Year) %>%
+  group_by(SITE_NO, EASTING, NORTHING) %>%
   summarise(Summer_tasmax_2022 = mean(Summer_tasmax_2022),
             .groups = "drop")
 
@@ -463,8 +403,5 @@ ash_plots <- filter(DBH22, SITE_NO < 200 &
 ash_sites <- unique(ash_plots$SITE_NO)
 
 # deer risk
-deerrisk <- readxl::read_excel(paste0(config::get()$directories$deerdata,
-                                      "Grid refs and deer risk_broadleaved.xlsx"),
-                               range = "A1:F104") %>%
-  select(SITE_NO = SITE_NUMBER, DEER = `Woodland Deer Risk`) %>%
+deerrisk <- read.csv("Metadata/DEER_RISK.csv") %>%
   mutate(DEER = ifelse(DEER == "None", "Low", DEER))
