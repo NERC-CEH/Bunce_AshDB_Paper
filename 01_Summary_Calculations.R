@@ -140,15 +140,6 @@ BLEAF_META <- plot_meta %>%
 BRLEAF_SUMMARY <- GRFLORA_SUMMARY %>% 
   left_join(BLEAF_META)
 
-# Site-level data
-BRLEAF_SUMM_SITE <- BLEAF_META %>% 
-  mutate(ASHDIEBACK = ifelse(ASHDIEBACK == "Present", 1, 0)) %>%
-  group_by(SITE_NO, YEAR) %>%
-  summarise(NPLOT = length(unique(PLOT_NO)),
-            DAYOFYEAR = mean(DAYOFYEAR),
-            ASHDIEBACK = sum(ASHDIEBACK, na.rm = TRUE), .groups = "drop") %>%
-  mutate(ASHDIEBACK = ASHDIEBACK/NPLOT) %>%
-  inner_join(GRFLORA_SITE)
 
 # Cover of specific species ####
 # Bramble cover
@@ -161,6 +152,56 @@ SP_COVER <- GRFLORA_ALL %>%
   mutate(RUBUS = replace_na(RUBUS, 0))
 
 BRLEAF_SUMMARY <- left_join(BRLEAF_SUMMARY, SP_COVER)
+
+# AWI Richness ####
+# AWI data
+AWI_sites <- read.csv("Metadata/SITES_AWI_REGIONS.csv")
+AWI_indicator <- read.csv("Metadata/AWI_INDICATOR_LISTS.csv")
+AWI_indic_long <- pivot_longer(AWI_indicator, 
+                               SouthWest:EastMidlands, names_to = "AWI_region",
+                               values_to = "AWI") %>%
+  filter(AWI == "Y") %>%
+  select(AMALG_BRC_CODE, AWI_region, AWI) %>%
+  distinct()
+
+GRFLORA_AWI <- GRFLORA_ALL %>% ungroup() %>%
+  filter(!is.na(AMALG_BRC_CODE)) %>%
+  left_join(AWI_sites, by = c("SITE_NO")) %>%
+  left_join(AWI_indic_long, by = c("AWI_region",
+                                   "AMALG_BRC_CODE"), 
+            relationship = "many-to-many") %>%
+  filter(AWI == "Y") %>%
+  group_by(SITE_NO, PLOT_NO, YEAR) %>%
+  summarise(AWI_RICH = n(), .groups = "drop")
+
+GRFLORA_AWI_SITE <- GRFLORA_ALL %>% ungroup() %>%
+  filter(!is.na(AMALG_BRC_CODE)) %>%
+  left_join(AWI_sites, by = c("SITE_NO")) %>%
+  left_join(AWI_indic_long, by = c("AWI_region",
+                                   "AMALG_BRC_CODE"), 
+            relationship = "many-to-many") %>%
+  filter(AWI == "Y") %>%
+  group_by(SITE_NO, YEAR) %>%
+  summarise(AWI_RICH = length(unique(AMALG_BRC_CODE)))
+
+
+BRLEAF_SUMMARY <- left_join(BRLEAF_SUMMARY, GRFLORA_AWI) %>%
+  mutate(AWI_RICH = tidyr::replace_na(AWI_RICH, 0))
+
+
+# Site-level data
+BRLEAF_SUMM_SITE <- BLEAF_META %>% 
+  mutate(ASHDIEBACK = ifelse(ASHDIEBACK == "Present", 1, 0)) %>%
+  group_by(SITE_NO, YEAR) %>%
+  summarise(NPLOT = length(unique(PLOT_NO)),
+            DAYOFYEAR = mean(DAYOFYEAR),
+            ASHDIEBACK = sum(ASHDIEBACK, na.rm = TRUE), .groups = "drop") %>%
+  mutate(ASHDIEBACK = ASHDIEBACK/NPLOT) %>%
+  inner_join(GRFLORA_SITE) %>%
+  inner_join(GRFLORA_AWI_SITE)
+
+write.csv(BRLEAF_SUMM_SITE, "Outputs/Site level richness.csv",
+          row.names = FALSE)
 
 # DBH data ####
 # codes and metadata
@@ -398,10 +439,47 @@ Climate_data <- pivot_longer(Clim_data,
 
 #  ash presence
 ash_plots <- filter(DBH22, SITE_NO < 200 & 
-                      AMALG_BRC_NAME == "Fraxinus excelsior (g)") %>% 
+                      SPECIES == "Fraxinus excelsior") %>% 
   select(SITE_NO, PLOT_NO) %>% unique() %>% mutate(ASHPRESENT = TRUE)
 ash_sites <- unique(ash_plots$SITE_NO)
 
 # deer risk
 deerrisk <- read.csv("Metadata/DEER_RISK.csv") %>%
   mutate(DEER = ifelse(DEER == "None", "Low", DEER))
+
+
+# Regeneration
+TOTAL_REGEN <- PLDATA22 %>%
+  filter(CODE_GROUP == "B" & CODE < 100) %>%
+  select(SITE_NO, PLOT_NO) %>%
+  distinct() %>%
+  mutate(REGEN = TRUE, YEAR = 2022) %>%
+  full_join(filter(PLDATA7101, CODE %in% 15:34) %>%
+              select(SITE_NO = SITE, PLOT_NO = PLOT, YEAR) %>%
+              distinct() %>%
+              mutate(REGEN = TRUE)) %>%
+  mutate(YR = as.numeric(as.factor(YEAR))) %>%
+  filter(!is.na(PLOT_NO)) %>%
+  full_join(select(BRLEAF_SUMMARY, SITE_NO, PLOT_NO, YR = YEAR)) %>%
+  mutate(YEAR = c(1971,2001,2022)[YR]) %>%
+  mutate(REGEN = replace_na(REGEN, FALSE))
+
+ASH_REGEN <- PLDATA22 %>%
+  filter(CODE == 16 & DATA_SHEET == "Plot description") %>%
+  select(SITE_NO, PLOT_NO) %>%
+  mutate(ASH_REGEN = TRUE, YEAR = 2022) %>%
+  full_join(filter(PLDATA7101, FIELD_SHEET == "Plot descriptions" & 
+                     CODE == 16) %>%
+              select(SITE_NO = SITE, PLOT_NO = PLOT, YEAR) %>%
+              mutate(ASH_REGEN = TRUE)) %>%
+  mutate(YR = as.numeric(as.factor(YEAR))) %>%
+  filter(!is.na(PLOT_NO)) %>%
+  full_join(select(BRLEAF_SUMMARY, SITE_NO, PLOT_NO, YR = YEAR)) %>%
+  mutate(YEAR = c(1971,2001,2022)[YR]) %>%
+  mutate(ASH_REGEN = replace_na(ASH_REGEN, FALSE)) %>%
+  distinct()
+
+REGEN <- full_join(TOTAL_REGEN, ASH_REGEN) %>%
+  select(-YEAR) %>% rename(YEAR = YR)
+write.csv(REGEN, "Outputs/REGEN.csv",
+          row.names = FALSE)

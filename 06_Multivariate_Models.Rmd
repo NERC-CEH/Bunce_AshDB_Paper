@@ -55,30 +55,42 @@ par_summary <- function(x, digits = 3, ...){
 
 ```{r deer risk data read, cache = TRUE}
 deerrisk <- read.csv("Metadata/DEER_RISK.csv") %>%
-  mutate(DEER = ifelse(DEER == "None", "Low", DEER))
+  mutate(DEER = ifelse(DEER == "None", "Low", DEER)) %>%
+  rename(SITE_NO = SITE_NUMBER)
 ```
 
 ```{r data read}
-BRLEAF_SUMMARY <- read.csv("Outputs/Broadleaf_summary_metrics_meta_SP_DBH.csv")
+BRLEAF_SUMMARY <- read.csv("Outputs/Broadleaf_summary_metrics.csv")
 BRLEAF_SUMMARY <- BRLEAF_SUMMARY %>%
-  rename(DEERPLOTS = DEER) %>%
   inner_join(deerrisk, by = "SITE_NO") %>%
   left_join(ash_plots) %>%
   filter(!is.na(ASHDIEBACK) & SITE_NO %in% ash_sites) %>%
   mutate(ASHPRESENT = tidyr::replace_na(ASHPRESENT, FALSE)) %>%
   mutate(ASHDIEBACK = ifelse(ASHDIEBACK == "Present", "Present",
-                             ifelse(ASHPRESENT & ASHDIEBACK == "Not present", 
+                             ifelse(ASHPRESENT & ASHDIEBACK == "Not present",
                                     "NotPresent", "NoAsh")),
          ASH = ifelse(ASHPRESENT | ASHDIEBACK == "Present", "Ash", "NoAsh"),
          YR = c("1971","2001","2022")[YEAR],
          YDAY = (DAYOFYEAR - 200)/30,
-         across(ends_with("_COVER"), \(x) ifelse(x > 100, 1, 0.01*x),
-                .names = "PROP_{.col}"),
          SITE = as.character(SITE_NO),
          PLOT = paste(SITE_NO, PLOT_NO, sep = "_"),
          DEER = factor(DEER, c("Low","Moderate","High"),
                        ordered = TRUE))
-BRLEAF_SUMMARY <- inner_join(BRLEAF_SUMMARY, Climate_data)
+Climate_data <- read.csv("Outputs/Climate_data.csv") %>%
+  tidyr::pivot_longer(Winter_rainfall_2022:Summer_tasmax_2001,
+                      names_to = c("Season","Variable","YR"),
+                      names_sep = "_") %>%
+  mutate(Clim_var = paste(Season, Variable, sep = "_")) %>%
+  select(SITE_NO, PLOT_NO, YR, Clim_var, value) %>% distinct() %>%
+  tidyr::pivot_wider(names_from = Clim_var, values_from = value)
+BRLEAF_SUMMARY <- inner_join(BRLEAF_SUMMARY, Climate_data) %>%
+  mutate(Summer_rainfall = (Summer_rainfall - 250)/100,
+         Winter_rainfall = (Winter_rainfall - 300)/100,
+         Summer_tasmax = (Summer_tasmax - 19),
+         Winter_tasmin = (Winter_tasmin - 1))
+REGEN <- read.csv("Outputs/REGEN_ASHDEER.csv") %>%
+  select(SITE_NO, PLOT_NO, YEAR, ends_with("REGEN")) %>% distinct()
+BRLEAF_SUMMARY <- inner_join(BRLEAF_SUMMARY, REGEN)
 ```
 
 # Multivariate Model
@@ -92,81 +104,103 @@ model_loc <- "Outputs/Models/Multivariate_Models/"
 
 ```{r model structure}
 model_structure <-
-  bf(SPECIES_RICH ~ -1 + YR*ASHDIEBACK*mo(DEER) + YDAY + FORB_COVER + RUBUS +
+  bf(SPECIES_RICH ~ YR*ASHDIEBACK*mo(DEER) + YDAY + FORB_COVER + GRASS_COVER + RUBUS +
        Winter_rainfall + Summer_rainfall + Winter_tasmin + Summer_tasmax + 
        (1|SITE/PLOT), family = "negbinomial") +
-  bf(FORB_COVER ~ -1 + YR*ASHDIEBACK + YDAY + RUBUS + 
+  bf(REGEN ~ YR*ASHDIEBACK*mo(DEER) + YDAY + FORB_COVER + GRASS_COVER + RUBUS +
+       Winter_rainfall + Summer_rainfall + Winter_tasmin + Summer_tasmax + 
+       (1|SITE/PLOT), family = "bernoulli") +
+  bf(FORB_COVER ~ YR*ASHDIEBACK + YDAY + RUBUS + 
        Winter_rainfall + Summer_rainfall + Winter_tasmin + Summer_tasmax + 
        (1|SITE/PLOT),
-     hu ~ -1 + YR*ASHDIEBACK + YDAY + RUBUS + 
+     hu ~ YR*ASHDIEBACK + YDAY + RUBUS + 
        Winter_rainfall + Summer_rainfall + Winter_tasmin + Summer_tasmax + 
        (1|SITE/PLOT), family = "hurdle_gamma") +
-  bf(RUBUS ~ -1 + YR*mo(DEER) + YDAY + 
+  bf(GRASS_COVER ~ YR*mo(DEER) + YDAY + RUBUS + 
+       Winter_rainfall + Summer_rainfall + Winter_tasmin + Summer_tasmax + 
+       (1|SITE/PLOT),
+     hu ~ YR*mo(DEER) + YDAY + RUBUS + 
+       Winter_rainfall + Summer_rainfall + Winter_tasmin + Summer_tasmax + 
+       (1|SITE/PLOT), family = "hurdle_gamma") +
+  bf(RUBUS ~ YR*mo(DEER) + YDAY + 
        Winter_rainfall + Summer_rainfall + Winter_tasmin + Summer_tasmax + 
        (1|SITE/PLOT), 
-     hu ~ -1 + YR*mo(DEER) + YDAY + 
+     hu ~ YR*mo(DEER) + YDAY + 
        Winter_rainfall + Summer_rainfall + Winter_tasmin + Summer_tasmax + 
        (1|SITE/PLOT), family = "hurdle_gamma") +
   set_rescor(FALSE)
 ```
 
 ```{r specify priors}
-mod_pr <- 
-  prior(normal(2,1), class = "b", coef = "YR1971", resp = "FORBCOVER") +
-  prior(normal(2,1), class = "b", coef = "YR2001", resp = "FORBCOVER") +
-  prior(normal(2,1), class = "b", coef = "YR2022", resp = "FORBCOVER") +
+mod_pr_nodeer <- 
+  # forb priors
+  prior(student_t(4,2,1), class = "Intercept", resp = "FORBCOVER") +
   prior(normal(0,1), class = "b", resp = "FORBCOVER") +
   prior(student_t(5, 0, 1), class = "sd", resp = "FORBCOVER") +
   prior(gamma(0.1,0.1), class = "shape", resp = "FORBCOVER") +
+  prior(student_t(4,-2,1), class = "Intercept", dpar = "hu", resp = "FORBCOVER") +
   prior(normal(0,1), class = "b", dpar = "hu", resp = "FORBCOVER") +
-  prior(normal(-2,1), class = "b", coef = "YR1971", dpar = "hu", resp = "FORBCOVER") +
-  prior(normal(-2,1), class = "b", coef = "YR2001", dpar = "hu", resp = "FORBCOVER") +
-  prior(normal(-2,1), class = "b", coef = "YR2022", dpar = "hu", resp = "FORBCOVER") +
   prior(student_t(2, 0, 1), class = "sd", dpar = "hu", resp = "FORBCOVER") +
-  prior(normal(2,1), class = "b", coef = "YR1971", resp = "RUBUS") +
-  prior(normal(2,1), class = "b", coef = "YR2001", resp = "RUBUS") +
-  prior(normal(2,1), class = "b", coef = "YR2022", resp = "RUBUS") +
+  # grass priors
+  prior(student_t(4,2,1), class = "Intercept", resp = "GRASSCOVER") +
+  prior(normal(0,1), class = "b", resp = "GRASSCOVER") +
+  prior(student_t(5, 0, 1), class = "sd", resp = "GRASSCOVER") +
+  prior(dirichlet(1), class = "simo", resp = "GRASSCOVER", coef = "moDEER1") +
+  prior(gamma(0.1,0.1), class = "shape", resp = "GRASSCOVER") +
+  prior(student_t(4,-2,1), class = "Intercept",  dpar = "hu", resp = "GRASSCOVER") +
+  prior(normal(0,1), class = "b", dpar = "hu", resp = "GRASSCOVER") +
+  prior(student_t(2, 0, 1), class = "sd", dpar = "hu", resp = "GRASSCOVER") +
+  prior(dirichlet(1), class = "simo", dpar = "hu", resp = "GRASSCOVER", coef = "moDEER1") +
+  # rubus priors
+  prior(student_t(4,2,1), class = "Intercept", resp = "RUBUS") +
   prior(normal(0,1), class = "b", resp = "RUBUS") +
-  prior(dirichlet(1), class = "simo", resp = "RUBUS", coef = "moDEER1") +
   prior(student_t(5, 0, 1), class = "sd", resp = "RUBUS") +
+  prior(dirichlet(1), class = "simo", resp = "RUBUS", coef = "moDEER1") +
   prior(gamma(0.1,0.1), class = "shape", resp = "RUBUS") +
+  prior(student_t(4,-1,1), class = "Intercept", dpar = "hu", resp = "RUBUS") +
   prior(normal(0,1), class = "b", dpar = "hu", resp = "RUBUS") +
-  prior(normal(-1,1), class = "b", coef = "YR1971", dpar = "hu", resp = "RUBUS") +
-  prior(normal(-1,1), class = "b", coef = "YR2001", dpar = "hu", resp = "RUBUS") +
-  prior(normal(-1,1), class = "b", coef = "YR2022", dpar = "hu", resp = "RUBUS") +
   prior(student_t(2, 0, 1), class = "sd", dpar = "hu", resp = "RUBUS") +
   prior(dirichlet(1), class = "simo", dpar = "hu", resp = "RUBUS", coef = "moDEER1") +
-  prior(normal(3,1), class = "b", coef = "YR1971", resp = "SPECIESRICH") +
-  prior(normal(3,1), class = "b", coef = "YR2001", resp = "SPECIESRICH") +
-  prior(normal(3,1), class = "b", coef = "YR2022", resp = "SPECIESRICH") +
+  # species richness priors
+  prior(student_t(4,3,1), class = "Intercept", resp = "SPECIESRICH") +
   prior(normal(0,1), class = "b", resp = "SPECIESRICH") +
   prior(student_t(5, 0, 1), class = "sd", resp = "SPECIESRICH") +
+  prior(gamma(0.1,0.1), class = "shape", resp = "SPECIESRICH") +
+  # regeneration priors
+  prior(student_t(4,0,1), class = "Intercept", resp = "REGEN") +
+  prior(normal(0,1), class = "b", resp = "REGEN") +
+  prior(student_t(5, 0, 1), class = "sd", resp = "REGEN") 
+mod_pr_deer <- mod_pr_nodeer +
   prior(dirichlet(1), class = "simo", resp = "SPECIESRICH", coef = "moDEER1") +
-  prior(gamma(0.1,0.1), class = "shape", resp = "SPECIESRICH")
+  prior(dirichlet(1), class = "simo", resp = "REGEN", coef = "moDEER1")
 ```
 
 
 ```{r run full model}
-sem_mod <- brm(model_structure, data = BRLEAF_SUMMARY, prior = mod_pr,
-               iter = 6000, warmup = 2000, thin = 4, cores = 4,
-               file = paste0(model_loc, "SEM_SomeInt_020523"))
-par_summary(sem_mod)
+sem_allclim <- brm(model_structure, data = BRLEAF_SUMMARY, prior = mod_pr_deer,
+                   iter = 6000, warmup = 2000, thin = 4, cores = 4,
+                   file = paste0(model_loc, "SEM_AllClim"))
+par_summary(sem_allclim)
 ```
 
 ```{r prior retrodictive check}
-pp_check(sem_mod, resp = "FORBCOVER", ndraws = 20, type = "ecdf_overlay") + 
+pp_check(sem_allclim, resp = "FORBCOVER", ndraws = 20, type = "ecdf_overlay") + 
   scale_x_continuous(limits = c(0,300))
-pp_check(sem_mod, resp = "RUBUS", ndraws = 20, type = "ecdf_overlay") +
+pp_check(sem_allclim, resp = "GRASSCOVER", ndraws = 20, type = "ecdf_overlay") + 
+  scale_x_continuous(limits = c(0,300))
+pp_check(sem_allclim, resp = "RUBUS", ndraws = 20, type = "ecdf_overlay") +
   scale_x_continuous(limits = c(0,200))
-pp_check(sem_mod, resp = "SPECIESRICH", ndraws = 20, type = "ecdf_overlay") +
+pp_check(sem_allclim, resp = "SPECIESRICH", ndraws = 20, type = "ecdf_overlay") +
   scale_x_continuous(limits = c(0,100))
+pp_check(sem_allclim, resp = "REGEN", ndraws = 20, type = "ecdf_overlay") 
 ```
 
 
 ```{r full model kfold}
-sem_mod <- add_criterion(sem_mod, "kfold", folds = "grouped", K = 10,
-                         group = "SITE",
-                         file = paste0(model_loc, "SEM_SomeInt_020523"))
+set.seed(1)
+folds <- loo::kfold_split_grouped(K = 10, x = BRLEAF_SUMMARY$SITE)
+sem_allclim <- add_criterion(sem_allclim, "kfold", folds = folds,
+                             file = paste0(model_loc, "SEM_FullModel"))
 ```
 
 ## Run climate models
@@ -175,19 +209,28 @@ sem_mod <- add_criterion(sem_mod, "kfold", folds = "grouped", K = 10,
 
 ```{r all winter model structure}
 model_structure <-
-  bf(SPECIES_RICH ~ -1 + YR*ASHDIEBACK*mo(DEER) + YDAY + FORB_COVER + RUBUS + 
+  bf(SPECIES_RICH ~ YR*ASHDIEBACK*mo(DEER) + YDAY + FORB_COVER + GRASS_COVER + RUBUS +
        Winter_rainfall + Winter_tasmin + 
        (1|SITE/PLOT), family = "negbinomial") +
-  bf(FORB_COVER ~ -1 + YR*ASHDIEBACK + YDAY + RUBUS + 
+  bf(REGEN ~ YR*ASHDIEBACK*mo(DEER) + YDAY + FORB_COVER + GRASS_COVER + RUBUS +
+       Winter_rainfall + Winter_tasmin + 
+       (1|SITE/PLOT), family = "bernoulli") +
+  bf(FORB_COVER ~ YR*ASHDIEBACK + YDAY + RUBUS + 
        Winter_rainfall + Winter_tasmin + 
        (1|SITE/PLOT),
-     hu ~ -1 + YR*ASHDIEBACK + YDAY + RUBUS + 
-       Winter_rainfall + Winter_tasmin +
+     hu ~ YR*ASHDIEBACK + YDAY + RUBUS + 
+       Winter_rainfall + Winter_tasmin + 
        (1|SITE/PLOT), family = "hurdle_gamma") +
-  bf(RUBUS ~ -1 + YR*mo(DEER) + YDAY +  
+  bf(GRASS_COVER ~ YR*mo(DEER) + YDAY + RUBUS + 
+       Winter_rainfall + Winter_tasmin + 
+       (1|SITE/PLOT),
+     hu ~ YR*mo(DEER) + YDAY + RUBUS + 
+       Winter_rainfall + Winter_tasmin + 
+       (1|SITE/PLOT), family = "hurdle_gamma") +
+  bf(RUBUS ~ YR*mo(DEER) + YDAY + 
        Winter_rainfall + Winter_tasmin + 
        (1|SITE/PLOT), 
-     hu ~ -1 + YR*mo(DEER) + YDAY + 
+     hu ~ YR*mo(DEER) + YDAY + 
        Winter_rainfall + Winter_tasmin + 
        (1|SITE/PLOT), family = "hurdle_gamma") +
   set_rescor(FALSE)
@@ -195,51 +238,58 @@ model_structure <-
 
 
 ```{r run all winter model}
-sem_mod_win <- brm(model_structure, data = BRLEAF_SUMMARY, prior = mod_pr,
+sem_winclim <- brm(model_structure, data = BRLEAF_SUMMARY, prior = mod_pr_deer,
                    iter = 6000, warmup = 2000, thin = 4, cores = 4,
-                   file = paste0(model_loc, "SEM_SomeInt_Win_020523"))
-par_summary(sem_mod_win)
+                   file = paste0(model_loc, "SEM_WinterClim"))
+par_summary(sem_winclim)
 ```
 
 ```{r all winter model kfold}
-sem_mod_win <- add_criterion(sem_mod_win, "kfold", folds = "grouped", K = 10,
-                             group = "SITE",
-                             file = paste0(model_loc, "SEM_SomeInt_Win_020523"))
+sem_winclim <- add_criterion(sem_winclim, "kfold", folds = folds,
+                             file = paste0(model_loc, "SEM_WinterClim"))
 ```
 
 ### Model with only summer rainfall and summer tasmax
 
 ```{r all summer model structure}
 model_structure <-
-  bf(SPECIES_RICH ~ -1 + YR*ASHDIEBACK*mo(DEER) + YDAY + FORB_COVER + RUBUS + 
+  bf(SPECIES_RICH ~ YR*ASHDIEBACK*mo(DEER) + YDAY + FORB_COVER + GRASS_COVER + RUBUS + 
        Summer_rainfall + Summer_tasmax + 
        (1|SITE/PLOT), family = "negbinomial") +
-  bf(FORB_COVER ~ -1 + YR*ASHDIEBACK + YDAY + RUBUS + 
+  bf(REGEN ~ YR*ASHDIEBACK*mo(DEER) + YDAY + FORB_COVER + GRASS_COVER + RUBUS +
+       Summer_rainfall + Summer_tasmax + 
+       (1|SITE/PLOT), family = "bernoulli") +
+  bf(FORB_COVER ~ YR*ASHDIEBACK + YDAY + RUBUS + 
        Summer_rainfall + Summer_tasmax + 
        (1|SITE/PLOT),
-     hu ~ -1 + YR*ASHDIEBACK + YDAY + RUBUS +
+     hu ~ YR*ASHDIEBACK + YDAY + RUBUS +
        Summer_rainfall + Summer_tasmax + 
        (1|SITE/PLOT), family = "hurdle_gamma") +
-  bf(RUBUS ~ -1 + YR*mo(DEER) + YDAY + 
+  bf(GRASS_COVER ~ YR*mo(DEER) + YDAY + RUBUS + 
+       Summer_rainfall + Summer_tasmax + 
+       (1|SITE/PLOT),
+     hu ~ YR*mo(DEER) + YDAY + RUBUS + 
+       Summer_rainfall + Summer_tasmax + 
+       (1|SITE/PLOT), family = "hurdle_gamma") +
+  bf(RUBUS ~ YR*mo(DEER) + YDAY + 
        Summer_rainfall + Summer_tasmax + 
        (1|SITE/PLOT), 
-     hu ~ -1 + YR*mo(DEER) + YDAY + 
+     hu ~ YR*mo(DEER) + YDAY + 
        Summer_rainfall + Summer_tasmax + 
        (1|SITE/PLOT), family = "hurdle_gamma") +
   set_rescor(FALSE)
 ```
 
 ```{r run all summer model}
-sem_mod_sum <- brm(model_structure, data = BRLEAF_SUMMARY, prior = mod_pr,
+sem_sumclim <- brm(model_structure, data = BRLEAF_SUMMARY, prior = mod_pr_deer,
                    iter = 6000, warmup = 2000, thin = 4, cores = 4,
-                   file = paste0(model_loc, "SEM_SomeInt_Sum_020523"))
-par_summary(sem_mod_sum)
+                   file = paste0(model_loc, "SEM_SummerClim"))
+par_summary(sem_sumclim)
 ```
 
 ```{r all summer model kfold}
-sem_mod_sum <- add_criterion(sem_mod_sum, "kfold", folds = "grouped", K = 10,
-                             group = "SITE",
-                             file = paste0(model_loc, "SEM_SomeInt_Sum_020523"))
+sem_sumclim <- add_criterion(sem_sumclim, "kfold", folds = folds,
+                             file = paste0(model_loc, "SEM_SummerClim"))
 ```
 
 
@@ -247,11 +297,17 @@ sem_mod_sum <- add_criterion(sem_mod_sum, "kfold", folds = "grouped", K = 10,
 
 ```{r model structure no climate}
 model_structure <-
-  bf(SPECIES_RICH ~ -1 + YR*ASHDIEBACK*mo(DEER) + YDAY + FORB_COVER + RUBUS + 
+  bf(SPECIES_RICH ~ -1 + YR*ASHDIEBACK*mo(DEER) + YDAY + FORB_COVER + GRASS_COVER + RUBUS + 
        (1|SITE/PLOT), family = "negbinomial") +
+  bf(REGEN ~ -1 + YR*ASHDIEBACK*mo(DEER) + YDAY + FORB_COVER + GRASS_COVER + RUBUS +
+       (1|SITE/PLOT), family = "bernoulli") +
   bf(FORB_COVER ~ -1 + YR*ASHDIEBACK + YDAY + RUBUS + 
        (1|SITE/PLOT),
      hu ~ -1 + YR*ASHDIEBACK + YDAY + RUBUS + 
+       (1|SITE/PLOT), family = "hurdle_gamma") +
+  bf(GRASS_COVER ~ -1 + YR*mo(DEER) + YDAY + RUBUS +
+       (1|SITE/PLOT),
+     hu ~ -1 + YR*mo(DEER) + YDAY + RUBUS + 
        (1|SITE/PLOT), family = "hurdle_gamma") +
   bf(RUBUS ~ -1 + YR*mo(DEER) + YDAY + 
        (1|SITE/PLOT), 
@@ -261,16 +317,15 @@ model_structure <-
 ```
 
 ```{r run no climate model}
-sem_mod_noclim <- brm(model_structure, data = BRLEAF_SUMMARY, prior = mod_pr,
-                      iter = 6000, warmup = 2000, thin = 4, cores = 4,
-                      file = paste0(model_loc, "SEM_SomeInt_NoClim_020523"))
-par_summary(sem_mod_noclim)
+sem_noclim <- brm(model_structure, data = BRLEAF_SUMMARY, prior = mod_pr_deer,
+                  iter = 6000, warmup = 2000, thin = 4, cores = 4,
+                  file = paste0(model_loc, "SEM_NoClim"))
+par_summary(sem_noclim)
 ```
 
 ```{r no climate model kfold}
-sem_mod_noclim <- add_criterion(sem_mod_noclim, "kfold", folds = "grouped", K = 10,
-                                group = "SITE",
-                                file = paste0(model_loc, "SEM_SomeInt_NoClim_020523"))
+sem_noclim <- add_criterion(sem_noclim, "kfold", folds = folds,
+                            file = paste0(model_loc, "SEM_NoClim"))
 ```
 
 
@@ -278,170 +333,557 @@ sem_mod_noclim <- add_criterion(sem_mod_noclim, "kfold", folds = "grouped", K = 
 ## Compare models with kfold
 
 ```{r kfold compare}
-loo_compare(sem_mod, sem_mod_win, sem_mod_sum, sem_mod_noclim,
+loo_compare(sem_allclim, sem_winclim, sem_sumclim, sem_noclim,
             criterion = "kfold") %>%
   knitr::kable(digits = 3)
 ```
 
+Model with winter climate only performs the best out of all model options, so all further model testing will be done with winter climate only.
 
 
-## Test impact of removing direct deer and ash dieback links to species richness
 
-Have to respecify priors to remove the deer simo prior on species richness:
+## Test impact of removing direct deer and ash dieback links to species richness and tree regeneration
 
-```{r respecify priors}
-mod_pr <- 
-  prior(normal(2,1), class = "b", coef = "YR1971", resp = "FORBCOVER") +
-  prior(normal(2,1), class = "b", coef = "YR2001", resp = "FORBCOVER") +
-  prior(normal(2,1), class = "b", coef = "YR2022", resp = "FORBCOVER") +
-  prior(normal(0,1), class = "b", resp = "FORBCOVER") +
-  prior(student_t(5, 0, 1), class = "sd", resp = "FORBCOVER") +
-  prior(gamma(0.1,0.1), class = "shape", resp = "FORBCOVER") +
-  prior(normal(0,1), class = "b", dpar = "hu", resp = "FORBCOVER") +
-  prior(normal(-2,1), class = "b", coef = "YR1971", dpar = "hu", resp = "FORBCOVER") +
-  prior(normal(-2,1), class = "b", coef = "YR2001", dpar = "hu", resp = "FORBCOVER") +
-  prior(normal(-2,1), class = "b", coef = "YR2022", dpar = "hu", resp = "FORBCOVER") +
-  prior(student_t(2, 0, 1), class = "sd", dpar = "hu", resp = "FORBCOVER") +
-  prior(normal(2,1), class = "b", coef = "YR1971", resp = "RUBUS") +
-  prior(normal(2,1), class = "b", coef = "YR2001", resp = "RUBUS") +
-  prior(normal(2,1), class = "b", coef = "YR2022", resp = "RUBUS") +
-  prior(normal(0,1), class = "b", resp = "RUBUS") +
-  prior(dirichlet(1), class = "simo", resp = "RUBUS", coef = "moDEER1") +
-  prior(student_t(5, 0, 1), class = "sd", resp = "RUBUS") +
-  prior(gamma(0.1,0.1), class = "shape", resp = "RUBUS") +
-  prior(normal(0,1), class = "b", dpar = "hu", resp = "RUBUS") +
-  prior(normal(-1,1), class = "b", coef = "YR1971", dpar = "hu", resp = "RUBUS") +
-  prior(normal(-1,1), class = "b", coef = "YR2001", dpar = "hu", resp = "RUBUS") +
-  prior(normal(-1,1), class = "b", coef = "YR2022", dpar = "hu", resp = "RUBUS") +
-  prior(student_t(2, 0, 1), class = "sd", dpar = "hu", resp = "RUBUS") +
-  prior(dirichlet(1), class = "simo", dpar = "hu", resp = "RUBUS", coef = "moDEER1") +
-  prior(normal(3,1), class = "b", coef = "YR1971", resp = "SPECIESRICH") +
-  prior(normal(3,1), class = "b", coef = "YR2001", resp = "SPECIESRICH") +
-  prior(normal(3,1), class = "b", coef = "YR2022", resp = "SPECIESRICH") +
-  prior(normal(0,1), class = "b", resp = "SPECIESRICH") +
-  prior(student_t(5, 0, 1), class = "sd", resp = "SPECIESRICH") +
-  prior(gamma(0.1,0.1), class = "shape", resp = "SPECIESRICH")
-```
+### Winter Model with no deer 
 
-
-### Model with no deer 
-
-```{r no deer model structure}
+```{r winter no deer model structure}
 model_structure <-
-  bf(SPECIES_RICH ~ -1 + YR*ASHDIEBACK + YDAY + FORB_COVER + RUBUS + 
+  bf(SPECIES_RICH ~ YR*ASHDIEBACK + YDAY + FORB_COVER + GRASS_COVER + RUBUS + 
        Winter_rainfall + Winter_tasmin + 
        (1|SITE/PLOT), family = "negbinomial") +
-  bf(FORB_COVER ~ -1 + YR*ASHDIEBACK + YDAY + RUBUS +
+  bf(REGEN ~ YR*ASHDIEBACK + YDAY + FORB_COVER + GRASS_COVER + RUBUS +
+       Winter_rainfall + Winter_tasmin + 
+       (1|SITE/PLOT), family = "bernoulli") +
+  bf(FORB_COVER ~ YR*ASHDIEBACK + YDAY + RUBUS +
        Winter_rainfall + Winter_tasmin + 
        (1|SITE/PLOT),
-     hu ~ -1 + YR*ASHDIEBACK + YDAY + RUBUS +
+     hu ~ YR*ASHDIEBACK + YDAY + RUBUS +
        Winter_rainfall + Winter_tasmin +
        (1|SITE/PLOT), family = "hurdle_gamma") +
-  bf(RUBUS ~ -1 + YR*mo(DEER) + YDAY + 
+  bf(GRASS_COVER ~ YR*mo(DEER) + YDAY + RUBUS + 
+       Winter_rainfall + Winter_tasmin + 
+       (1|SITE/PLOT),
+     hu ~ YR*mo(DEER) + YDAY + RUBUS + 
+       Winter_rainfall + Winter_tasmin + 
+       (1|SITE/PLOT), family = "hurdle_gamma") +
+  bf(RUBUS ~ YR*mo(DEER) + YDAY + 
        Winter_rainfall + Winter_tasmin + 
        (1|SITE/PLOT), 
-     hu ~ -1 + YR*mo(DEER) + YDAY + 
+     hu ~ YR*mo(DEER) + YDAY + 
        Winter_rainfall + Winter_tasmin + 
        (1|SITE/PLOT), family = "hurdle_gamma") +
   set_rescor(FALSE)
 ```
 
 
-```{r run no deer model}
-sem_modw <- brm(model_structure, data = BRLEAF_SUMMARY, prior = mod_pr,
-               iter = 6000, warmup = 2000, thin = 4, cores = 4,
-               file = paste0(model_loc, "SEM_SomeInt_Win_nodeer_030523"))
-par_summary(sem_modw)
+```{r run no deer winter model}
+sem_win_nodeer <- brm(model_structure, data = BRLEAF_SUMMARY, prior = mod_pr_nodeer,
+                      iter = 6000, warmup = 2000, thin = 4, cores = 4,
+                      file = paste0(model_loc, "SEM_WinterClim_DeerMed"))
+par_summary(sem_win_nodeer)
 ```
 
 
-```{r no deer model kfold}
-sem_modw <- add_criterion(sem_modw, "kfold", folds = "grouped", K = 10,
-                          group = "SITE",
-                          file = paste0(model_loc, "SEM_SomeInt_Win_nodeer_030523"))
+```{r no deer winter model kfold}
+sem_win_nodeer <- add_criterion(sem_win_nodeer, "kfold", folds = folds,
+                                file = paste0(model_loc, "SEM_WinterClim_DeerMed"))
 ```
 
-### Model with no dieback
+### Winter Model with no dieback
 
 
-```{r no dieback model structure}
+```{r no dieback winter model structure}
 model_structure <-
-  bf(SPECIES_RICH ~ -1 + YR*mo(DEER)*ASH + YDAY + FORB_COVER + RUBUS + 
+  bf(SPECIES_RICH ~ YR*mo(DEER)*ASH + YDAY + FORB_COVER + GRASS_COVER + RUBUS + 
        Winter_rainfall + Winter_tasmin + 
        (1|SITE/PLOT), family = "negbinomial") +
-  bf(FORB_COVER ~ -1 + YR*ASHDIEBACK + YDAY + RUBUS +
+  bf(REGEN ~ YR*mo(DEER)*ASH + YDAY + FORB_COVER + GRASS_COVER + RUBUS +
+       Winter_rainfall + Winter_tasmin + 
+       (1|SITE/PLOT), family = "bernoulli") +
+  bf(FORB_COVER ~ YR*ASHDIEBACK + YDAY + RUBUS +
        Winter_rainfall + Winter_tasmin + 
        (1|SITE/PLOT),
-     hu ~ -1 + YR*ASHDIEBACK + YDAY + RUBUS +
+     hu ~ YR*ASHDIEBACK + YDAY + RUBUS +
        Winter_rainfall + Winter_tasmin +
        (1|SITE/PLOT), family = "hurdle_gamma") +
-  bf(RUBUS ~ -1 + YR*mo(DEER) + YDAY + 
+  bf(GRASS_COVER ~ YR*ASHDIEBACK + YDAY + RUBUS + 
+       Winter_rainfall + Winter_tasmin + 
+       (1|SITE/PLOT),
+     hu ~ YR*ASHDIEBACK + YDAY + RUBUS + 
+       Winter_rainfall + Winter_tasmin + 
+       (1|SITE/PLOT), family = "hurdle_gamma") +
+  bf(RUBUS ~ YR*mo(DEER) + YDAY + 
        Winter_rainfall + Winter_tasmin + 
        (1|SITE/PLOT), 
-     hu ~ -1 + YR*mo(DEER) + YDAY + 
+     hu ~ YR*mo(DEER) + YDAY + 
        Winter_rainfall + Winter_tasmin + 
        (1|SITE/PLOT), family = "hurdle_gamma") +
   set_rescor(FALSE)
 ```
 
 
-```{r run no dieback model}
-sem_modd <- brm(model_structure, data = BRLEAF_SUMMARY, prior = mod_pr +
-  prior(dirichlet(1), class = "simo", resp = "SPECIESRICH", coef = "moDEER1") ,
-               iter = 6000, warmup = 2000, thin = 4, cores = 4,
-               file = paste0(model_loc, "SEM_SomeInt_Win_noDB_190523"))
-par_summary(sem_modd)
+```{r run no dieback winter model}
+sem_win_noDB <- brm(model_structure, data = BRLEAF_SUMMARY, prior = mod_pr_deer,
+                    iter = 6000, warmup = 2000, thin = 4, cores = 4,
+                    file = paste0(model_loc, "SEM_WinterClim_AshDBMed"))
+par_summary(sem_win_noDB)
 ```
 
-```{r no dieback model kfold}
-sem_modd <- add_criterion(sem_modd, "kfold", folds = "grouped", K = 10,
-                         group = "SITE",
-                         file = paste0(model_loc, "SEM_SomeInt_Win_noDB_190523"))
+```{r no dieback winter model kfold}
+sem_win_noDB <- add_criterion(sem_win_noDB, "kfold", folds = folds,
+                              file = paste0(model_loc, "SEM_WinterClim_AshDBMed"))
 ```
 
 
-### Model with no dieback or deer
+### Winter Model with no dieback or deer
 
-```{r no deer or dieback model structure}
+```{r no deer or dieback winter model structure}
 model_structure <-
-  bf(SPECIES_RICH ~ -1 + YR*ASH + YDAY + FORB_COVER + RUBUS + 
+  bf(SPECIES_RICH ~ YR*ASH + YDAY + FORB_COVER + RUBUS + 
        Winter_rainfall + Winter_tasmin + 
        (1|SITE/PLOT), family = "negbinomial") +
-  bf(FORB_COVER ~ -1 + YR*ASHDIEBACK + YDAY + RUBUS +
+  bf(REGEN ~ YR*ASH + YDAY + FORB_COVER + GRASS_COVER + RUBUS +
+       Winter_rainfall + Winter_tasmin + 
+       (1|SITE/PLOT), family = "bernoulli") +
+  bf(FORB_COVER ~ YR*ASHDIEBACK + YDAY + RUBUS +
        Winter_rainfall + Winter_tasmin + 
        (1|SITE/PLOT),
-     hu ~ -1 + YR*ASHDIEBACK + YDAY + RUBUS +
+     hu ~ YR*ASHDIEBACK + YDAY + RUBUS +
        Winter_rainfall + Winter_tasmin +
        (1|SITE/PLOT), family = "hurdle_gamma") +
-  bf(RUBUS ~ -1 + YR*mo(DEER) + YDAY + 
+  bf(GRASS_COVER ~ YR*mo(DEER) + YDAY + RUBUS + 
+       Winter_rainfall + Winter_tasmin + 
+       (1|SITE/PLOT),
+     hu ~ YR*mo(DEER) + YDAY + RUBUS + 
+       Winter_rainfall + Winter_tasmin + 
+       (1|SITE/PLOT), family = "hurdle_gamma") +
+  bf(RUBUS ~ YR*mo(DEER) + YDAY + 
        Winter_rainfall + Winter_tasmin + 
        (1|SITE/PLOT), 
-     hu ~ -1 + YR*mo(DEER) + YDAY + 
+     hu ~ YR*mo(DEER) + YDAY + 
        Winter_rainfall + Winter_tasmin + 
        (1|SITE/PLOT), family = "hurdle_gamma") +
   set_rescor(FALSE)
 ```
 
 
-```{r run no deer or dieback model}
-sem_modn <- brm(model_structure, data = BRLEAF_SUMMARY, prior = mod_pr,
-               iter = 6000, warmup = 2000, thin = 4, cores = 4,
-               file = paste0(model_loc, "SEM_SomeInt_Win_noDeerDB_190523"))
-par_summary(sem_modn)
+```{r run no deer or dieback winter model}
+sem_win_fullmed <- brm(model_structure, data = BRLEAF_SUMMARY, prior = mod_pr_nodeer,
+                       iter = 6000, warmup = 2000, thin = 4, cores = 4,
+                       file = paste0(model_loc, "SEM_WinterClim_FullMed"))
+par_summary(sem_win_fullmed)
 ```
 
 
-```{r no deer or dieback model kfold}
-sem_modn <- add_criterion(sem_modn, "kfold", folds = "grouped", K = 10,
-                         group = "SITE",
-                         file = paste0(model_loc, "SEM_SomeInt_Win_noDeerDB_190523"))
+```{r no deer or dieback winter model kfold}
+sem_win_fullmed <- add_criterion(sem_win_fullmed, "kfold", folds = folds,
+                                 file = paste0(model_loc, "SEM_WinterClim_FullMed"))
 ```
+
+
+### Winter Model no direct effects on species richness
+
+
+```{r winter model sr med structure}
+model_structure <-
+  bf(SPECIES_RICH ~ YR*ASH + YDAY + FORB_COVER + GRASS_COVER + RUBUS +
+       Winter_rainfall + Winter_tasmin + 
+       (1|SITE/PLOT), family = "negbinomial") +
+  bf(REGEN ~ YR*ASHDIEBACK*mo(DEER) + YDAY + FORB_COVER + GRASS_COVER + RUBUS +
+       Winter_rainfall + Winter_tasmin + 
+       (1|SITE/PLOT), family = "bernoulli") +
+  bf(FORB_COVER ~ YR*ASHDIEBACK + YDAY + RUBUS + 
+       Winter_rainfall + Winter_tasmin + 
+       (1|SITE/PLOT),
+     hu ~ YR*ASHDIEBACK + YDAY + RUBUS + 
+       Winter_rainfall + Winter_tasmin + 
+       (1|SITE/PLOT), family = "hurdle_gamma") +
+  bf(GRASS_COVER ~ YR*mo(DEER) + YDAY + RUBUS + 
+       Winter_rainfall + Winter_tasmin + 
+       (1|SITE/PLOT),
+     hu ~ YR*mo(DEER) + YDAY + RUBUS + 
+       Winter_rainfall + Winter_tasmin + 
+       (1|SITE/PLOT), family = "hurdle_gamma") +
+  bf(RUBUS ~ YR*mo(DEER) + YDAY + 
+       Winter_rainfall + Winter_tasmin + 
+       (1|SITE/PLOT), 
+     hu ~ YR*mo(DEER) + YDAY + 
+       Winter_rainfall + Winter_tasmin + 
+       (1|SITE/PLOT), family = "hurdle_gamma") +
+  set_rescor(FALSE)
+```
+
+
+```{r run winter sr med model}
+sem_win_srmed <- brm(model_structure, data = BRLEAF_SUMMARY, 
+                     prior = mod_pr_nodeer +
+                       prior(dirichlet(1), class = "simo", resp = "REGEN", coef = "moDEER1"),
+                     iter = 6000, warmup = 2000, thin = 4, cores = 4,
+                     file = paste0(model_loc, "SEM_WinterClim_SRMed"))
+par_summary(sem_win_srmed)
+```
+
+```{r winter model kfold}
+sem_win_srmed <- add_criterion(sem_win_srmed, "kfold", folds = folds,
+                             file = paste0(model_loc, "SEM_WinterClim_SRMed"))
+```
+
+
+
+### Winter Model no direct effects on tree regeneration
+
+```{r winter model regen med structure}
+model_structure <-
+  bf(SPECIES_RICH ~ YR*ASHDIEBACK*mo(DEER) + YDAY + FORB_COVER + GRASS_COVER + RUBUS +
+       Winter_rainfall + Winter_tasmin + 
+       (1|SITE/PLOT), family = "negbinomial") +
+  bf(REGEN ~ YR*ASH + YDAY + FORB_COVER + GRASS_COVER + RUBUS +
+       Winter_rainfall + Winter_tasmin + 
+       (1|SITE/PLOT), family = "bernoulli") +
+  bf(FORB_COVER ~ YR*ASHDIEBACK + YDAY + RUBUS + 
+       Winter_rainfall + Winter_tasmin + 
+       (1|SITE/PLOT),
+     hu ~ YR*ASHDIEBACK + YDAY + RUBUS + 
+       Winter_rainfall + Winter_tasmin + 
+       (1|SITE/PLOT), family = "hurdle_gamma") +
+  bf(GRASS_COVER ~ YR*mo(DEER) + YDAY + RUBUS + 
+       Winter_rainfall + Winter_tasmin + 
+       (1|SITE/PLOT),
+     hu ~ YR*mo(DEER) + YDAY + RUBUS + 
+       Winter_rainfall + Winter_tasmin + 
+       (1|SITE/PLOT), family = "hurdle_gamma") +
+  bf(RUBUS ~ YR*mo(DEER) + YDAY + 
+       Winter_rainfall + Winter_tasmin + 
+       (1|SITE/PLOT), 
+     hu ~ YR*mo(DEER) + YDAY + 
+       Winter_rainfall + Winter_tasmin + 
+       (1|SITE/PLOT), family = "hurdle_gamma") +
+  set_rescor(FALSE)
+```
+
+
+```{r run winter sr med model}
+sem_win_regmed <- brm(model_structure, data = BRLEAF_SUMMARY, 
+                     prior = mod_pr_nodeer +
+                       prior(dirichlet(1), class = "simo", resp = "SPECIESRICH", coef = "moDEER1"),
+                     iter = 6000, warmup = 2000, thin = 4, cores = 4,
+                     file = paste0(model_loc, "SEM_WinterClim_RegenMed"))
+par_summary(sem_win_regmed)
+```
+
+```{r winter model kfold}
+sem_win_regmed <- add_criterion(sem_win_regmed, "kfold", folds = folds,
+                             file = paste0(model_loc, "SEM_WinterClim_RegenMed"))
+```
+
+
 
 ## Model comparison with kfold
 
 ```{r}
-loo_compare(sem_mod_win, sem_modw, sem_modd, sem_modn,
+loo_compare(sem_winclim, sem_win_nodeer, sem_win_noDB, sem_win_fullmed,
+            sem_win_srmed, sem_win_regmed,
             criterion = "kfold") %>%
   knitr::kable(digits = 3)
 ```
 
+Best model is winter-only climate with direct effect of deer but no direct effect of ash dieback upon species richness and tree regeneration. However, winter-only model with complete mediation of deer and ash dieback was comparable in predictive performance and is a simpler model, so limiting to this model for summaries. 
+
+# Model analysis
+
+First, for the best model that includes direct deer effects upon species richness and tree regeneration graph those out, then do the rest of the work with the fully mediated model (effects are generally similar).
+
+Deer effects:
+
+```{r}
+int_emmsr <- emmeans(sem_win_noDB, ~ DEER | YR, resp = "SPECIESRICH", epred = TRUE)
+pairs(int_emmsr) %>%
+  knitr::kable(digits = 3)
+```
+
+```{r}
+(i1 <- int_emmsr %>%
+  gather_emmeans_draws() %>%
+  mutate(Year = as.numeric(as.character(YR))) %>%
+  ggplot(aes(x = Year, y = .value, colour = DEER, fill = DEER)) +
+  stat_lineribbon(alpha = 1/4) +
+  scale_fill_manual(values = two_cols,
+                    aesthetics = c("colour","fill"),
+                    name = "Deer Risk") +
+  labs(y = "Ground Flora Richness") +
+  theme(axis.text = element_text(size = 12)))
+```
+
+```{r}
+int_emmreg <- emmeans(sem_win_noDB, ~ DEER | YR, resp = "REGEN", epred = TRUE)
+pairs(int_emmreg) %>%
+  knitr::kable(digits = 3)
+```
+
+```{r}
+(i2 <- int_emmreg %>%
+  gather_emmeans_draws() %>%
+  mutate(Year = as.numeric(as.character(YR))) %>%
+  ggplot(aes(x = Year, y = .value, colour = DEER, fill = DEER)) +
+  stat_lineribbon(alpha = 1/4) +
+  scale_fill_manual(values = two_cols,
+                    aesthetics = c("colour","fill"),
+                    name = "Deer Risk") +
+  labs(y = "Tree Regeneration") +
+  theme(axis.text = element_text(size = 12)))
+```
+
+
+
+```{r}
+intmodel <- sem_win_fullmed
+```
+
+
+Emmeans on ash dieback and deer effects:
+
+```{r ash dieback effects on forbs}
+int_emm1 <- emmeans(intmodel, ~ ASHDIEBACK | YR, resp = "FORBCOVER", epred = TRUE)
+pairs(int_emm1) %>%
+  knitr::kable(digits = 3)
+```
+
+
+```{r ash dieback effects on forbs plot, fig.dim = c(7,5)}
+(i3 <- int_emm1 %>%
+  gather_emmeans_draws() %>%
+  mutate(Year = as.numeric(as.character(YR))) %>%
+  ggplot(aes(x = Year, y = .value, colour = ASHDIEBACK, fill = ASHDIEBACK)) +
+  stat_lineribbon(alpha = 1/4) +
+  scale_fill_manual(values = c("#000000","#009E73","#CC79A7"),
+                    aesthetics = c("colour","fill"),
+                    name = "Ash Dieback") +
+  labs(y = "Forb cover (%)") +
+  theme(axis.text = element_text(size = 12)))
+```
+
+
+```{r deer effects on grasses}
+int_emm2 <- emmeans(intmodel, ~ DEER | YR, resp = "GRASSCOVER", epred = TRUE)
+pairs(int_emm2) %>%
+  knitr::kable(digits = 3)
+```
+
+
+```{r deer effects on grasses plot, fig.dim = c(7,5)}
+(i4 <- int_emm2 %>%
+  gather_emmeans_draws() %>%
+  mutate(Year = as.numeric(as.character(YR))) %>%
+  ggplot(aes(x = Year, y = .value, colour = DEER, fill = DEER)) +
+  stat_lineribbon(alpha = 1/4) +
+  scale_fill_manual(values = two_cols,
+                    aesthetics = c("colour","fill"),
+                    name = "Deer Risk") +
+  labs(y = "Grass cover (%)") +
+  theme(axis.text = element_text(size = 12)))
+
+```
+
+
+
+```{r deer effects on bramble}
+int_emm3 <- emmeans(intmodel, ~ DEER | YR, resp = "RUBUS", epred = TRUE)
+pairs(int_emm3, type = "response") %>%
+  knitr::kable(digits = 3)
+```
+
+```{r deer effects on rubus, fig.dim = c(7,5)}
+(i5 <- int_emm3 %>%
+  gather_emmeans_draws() %>%
+  mutate(Year = as.numeric(as.character(YR))) %>%
+  ggplot(aes(x = Year, y = .value, colour = DEER, fill = DEER)) +
+  stat_lineribbon(alpha = 1/4) +
+  scale_fill_manual(values = two_cols,
+                    aesthetics = c("colour","fill"),
+                    name = "Deer Risk") +
+  labs(y = "Bramble cover (%)") +
+  theme(axis.text = element_text(size = 12)))
+
+```
+
+
+
+
+Effects of rubus on forb:
+
+```{r bramble effect forbs}
+emtrends(intmodel, ~RUBUS, "RUBUS", resp = "FORBCOVER", epred = TRUE)
+```
+
+Effects of rubus on grasses:
+
+```{r bramble effect grasses}
+emtrends(intmodel, ~RUBUS, "RUBUS", resp = "GRASSCOVER", epred = TRUE)
+```
+
+```{r}
+(i6 <- plot(conditional_effects(intmodel, "RUBUS", resp = "FORBCOVER"),
+           plot = FALSE)[[1]] +
+    labs(x = "Bramble cover (%)", y = "Forb cover (%)"))
+(i7 <- plot(conditional_effects(intmodel, "RUBUS", resp = "GRASSCOVER"),
+           plot = FALSE)[[1]] +
+    labs(x = "Bramble cover (%)", y = "Grass cover (%)"))
+i1+i2+i4+i5+i3+i6+i7+plot_layout(nrow=2, guides = "collect")
+ggsave("Mult model deer and DB and rubus effects.png", path = "Outputs/",
+       width = 15, height = 15, units = "cm", dpi = 300, scale= 1.5)
+```
+
+
+
+Effect of rubus on species richness:
+
+```{r bramble effect sr number}
+emtrends(intmodel, ~RUBUS, "RUBUS", resp = "SPECIESRICH", epred = TRUE)
+```
+
+Effect of forb on species richness:
+
+```{r forb effect sr number}
+emtrends(intmodel, ~FORB_COVER, "FORB_COVER", resp = "SPECIESRICH", epred = TRUE)
+```
+
+Effect of grasses on species richness:
+
+```{r grass effect sr number}
+emtrends(intmodel, ~GRASS_COVER, "GRASS_COVER", resp = "SPECIESRICH", epred = TRUE)
+```
+
+Effect of rubus on regen:
+
+```{r bramble effect regen}
+emtrends(intmodel, ~RUBUS, "RUBUS", resp = "REGEN", epred = TRUE)
+```
+
+Effect of forb on regen:
+
+```{r forb effect regen}
+emtrends(intmodel, ~FORB_COVER, "FORB_COVER", resp = "REGEN", epred = TRUE)
+```
+
+Effect of grasses on regen:
+
+```{r grass effect regen}
+emtrends(intmodel, ~GRASS_COVER, "GRASS_COVER", resp = "REGEN", epred = TRUE)
+```
+
+Plots of effects:
+
+```{r bramble effect plot, fig.dim = c(7,5)}
+cond <- data.frame(YR = "2022", ASHDIEBACK = "NoAsh", DEER = "Moderate")
+p1 <- plot(conditional_effects(intmodel, "FORB_COVER", resp = "SPECIESRICH", 
+                         conditions = cond), plot = FALSE)[[1]] + 
+  labs(x = "Forb Cover (%)", y = "Ground Flora Richness")
+p2 <- plot(conditional_effects(intmodel, "GRASS_COVER", resp = "SPECIESRICH", 
+                         conditions = cond), plot = FALSE)[[1]] + 
+  labs(x = "Grass Cover (%)", y = "Ground Flora Richness") 
+p3 <- plot(conditional_effects(intmodel, "RUBUS", resp = "SPECIESRICH", 
+                         conditions = cond), plot = FALSE)[[1]] +
+  labs(x = "Bramble Cover (%)", y = "Ground Flora Richness")
+p4 <- plot(conditional_effects(intmodel, "FORB_COVER", resp = "REGEN", 
+                         conditions = cond), plot = FALSE,
+           line_args = list(linetype = 2))[[1]] + 
+  labs(x = "Forb Cover (%)", y = "Tree Regeneration") 
+p5 <- plot(conditional_effects(intmodel, "GRASS_COVER", resp = "REGEN", 
+                         conditions = cond), plot = FALSE)[[1]] + 
+  labs(x = "Grass Cover (%)", y = "Tree Regeneration")
+p6 <- plot(conditional_effects(intmodel, "RUBUS", resp = "REGEN", 
+                         conditions = cond), plot = FALSE)[[1]] +
+  labs(x = "Bramble Cover (%)", y = "Tree Regeneration")
+p7 <- plot(conditional_effects(intmodel, "RUBUS", resp = "FORBCOVER", 
+                         conditions = cond), plot = FALSE)[[1]] + 
+  labs(x = "Bramble Cover (%)", y = "Forb Cover (%)")
+p8 <- plot(conditional_effects(intmodel, "RUBUS", resp = "GRASSCOVER"),
+           plot = FALSE)[[1]] + 
+  labs(x = "Bramble Cover (%)", y = "Grass Cover (%)")
+p1+p2+p3+p4+p5+p6+p7+p8 &
+  theme(axis.title = element_text(size = 15))
+
+p1 + p2 + p3 + p4 + p5 + p6 + plot_layout(axis_titles = "collect") &
+  theme(axis.title = element_text(size = 15))
+ggsave("Mult model sprich regen resp dash95ci.png", path = "Outputs/", 
+       width = 15, height = 10, units = "cm", dpi = 600, scale = 1.5)
+```
+
+
+Climate effects:
+
+```{r clim effect plot without data, fig.dim = c(8,8)}
+p1 <- plot(conditional_effects(intmodel, "Winter_tasmin", resp = "FORBCOVER"),
+           plot = FALSE, line_args = list(linetype = 2))[[1]] +
+  labs(x = "Winter min temp (°C)", y = "Forb cover (%)") +
+  scale_x_continuous(breaks = -3:2, labels = -2:3, limits = c(-3,2.5), expand = c(0,0)) 
+p2 <- plot(conditional_effects(intmodel, "Winter_rainfall", resp = "FORBCOVER"),
+           plot = FALSE, line_args = list(linetype = 2))[[1]] +
+  labs(x = "Winter rainfall (mm)", y = "Forb cover (%)") +
+  scale_x_continuous(breaks = seq(-2,6,2), labels = seq(100,900,200), limits = c(-2,7), expand = c(0,0))
+p3 <- plot(conditional_effects(intmodel, "Winter_tasmin", resp = "RUBUS"),
+           plot = FALSE)[[1]] +
+  labs(x = "Winter min temp (°C)", y = "Bramble cover (%)") +
+  scale_x_continuous(breaks = -3:2, labels = -2:3, limits = c(-3,2.5), expand = c(0,0)) 
+p4 <- plot(conditional_effects(intmodel, "Winter_rainfall", resp = "RUBUS"),
+           plot = FALSE)[[1]] +
+  labs(x = "Winter rainfall (mm)", y = "Bramble cover (%)") +
+  scale_x_continuous(breaks = seq(-2,6,2), labels = seq(100,900,200), limits = c(-2,7), expand = c(0,0)) 
+p5 <- plot(conditional_effects(intmodel, "Winter_tasmin", resp = "SPECIESRICH"),
+           plot = FALSE)[[1]] +
+  labs(x = "Winter min temp (°C)", y = "Ground Flora richness") +
+  scale_x_continuous(breaks = -3:2, labels = -2:3, limits = c(-3,2.5), expand = c(0,0)) 
+p6 <- plot(conditional_effects(intmodel, "Winter_rainfall", resp = "SPECIESRICH"),
+           plot = FALSE, line_args = list(linetype = 2))[[1]] +
+  labs(x = "Winter rainfall (mm)", y = "Ground Flora richness") +
+  scale_x_continuous(breaks = seq(-2,6,2), labels = seq(100,900,200), limits = c(-2,7), expand = c(0,0)) 
+p7 <- plot(conditional_effects(intmodel, "Winter_tasmin", resp = "GRASSCOVER"),
+           plot = FALSE)[[1]] +
+  labs(x = "Winter min temp (°C)", y = "Grass cover (%)") +
+  scale_x_continuous(breaks = -3:2, labels = -2:3, limits = c(-3,2.5), expand = c(0,0)) 
+p8 <- plot(conditional_effects(intmodel, "Winter_rainfall", resp = "GRASSCOVER"),
+           plot = FALSE, line_args = list(linetype = 2))[[1]] +
+  labs(x = "Winter rainfall (mm)", y = "Grass cover (%)") +
+  scale_x_continuous(breaks = seq(-2,6,2), labels = seq(100,900,200), limits = c(-2,7), expand = c(0,0)) 
+p9 <- plot(conditional_effects(intmodel, "Winter_tasmin", resp = "REGEN"),
+           plot = FALSE, line_args = list(linetype = 2))[[1]] +
+  labs(x = "Winter min temp (°C)", y = "Tree regeneration") +
+  scale_x_continuous(breaks = -3:2, labels = -2:3, limits = c(-3,2.5), expand = c(0,0)) 
+p10 <- plot(conditional_effects(intmodel, "Winter_rainfall", resp = "REGEN"),
+            plot = FALSE)[[1]] +
+  labs(x = "Winter rainfall (mm)", y = "Tree regeneration") +
+  scale_x_continuous(breaks = seq(-2,6,2), labels = seq(100,900,200), limits = c(-2,7), expand = c(0,0)) 
+
+
+p3 + p4 + p1 + p2 + p7 + p8 + p5 + p6 + p9 + p10 +plot_layout(nrow = 5, axis_titles = "collect")
+```
+
+```{r}
+ydays <- (c(121,152,182,213,244)-200)/30
+yday_labs <- paste0("01-",month.abb[5:9])
+y1 <- plot(conditional_effects(intmodel, "YDAY", resp = "RUBUS"),
+            plot = FALSE)[[1]] +
+  labs(x = "Day of year", y = "Bramble cover (%)") +
+  scale_x_continuous(breaks = ydays, labels = yday_labs)
+y2 <- plot(conditional_effects(intmodel, "YDAY", resp = "FORBCOVER"),
+            plot = FALSE)[[1]] +
+  labs(x = "Day of year", y = "Forb cover (%)") +
+  scale_x_continuous(breaks = ydays, labels = yday_labs)
+y3 <- plot(conditional_effects(intmodel, "YDAY", resp = "GRASSCOVER"),
+            plot = FALSE)[[1]] +
+  labs(x = "Day of year", y = "Grass cover (%)") +
+  scale_x_continuous(breaks = ydays, labels = yday_labs)
+y4 <- plot(conditional_effects(intmodel, "YDAY", resp = "SPECIESRICH"),
+            plot = FALSE)[[1]] +
+  labs(x = "Day of year", y = "Ground Flora richness") +
+  scale_x_continuous(breaks = ydays, labels = yday_labs)
+y5 <- plot(conditional_effects(intmodel, "YDAY", resp = "REGEN"),
+            plot = FALSE, line_args = list(linetype = 2))[[1]] +
+  labs(x = "Day of year", y = "Tree regeneration") +
+  scale_x_continuous(breaks = ydays, labels = yday_labs)
+
+p3 + p4 + y1 + p1 + p2 + y2 + p7 + p8 + y3 + p5 + p6 + y4 + p9 + p10 + y5 +
+  plot_layout(nrow = 5, axis_titles = "collect")
+ggsave("Mult model clim yday effects dash95ci.png", path = "Outputs/",
+       width = 15, height = 15, units = "cm", scale = 1.5)
+```

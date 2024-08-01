@@ -16,7 +16,7 @@ library(tidybayes)
 library(ggplot2)
 theme_set(theme_classic())
 teal <- "#0383a4"
-model_loc <- "Outputs/Models/ChangeOverTime/NoNuisanceError/noAR_YRSITE/"
+model_loc <- "Outputs/Models/ChangeOverTime/"
 ```
 
 
@@ -48,7 +48,6 @@ par_summary <- function(x, digits = 3, ...){
 
 
 ```{r data read}
-BRLEAF_SUMMARY <- read.csv("Outputs/Broadleaf_summary_metrics_meta_SP_DBH.csv")
 BRLEAF_SUMMARY <- BRLEAF_SUMMARY %>%
   mutate(YR = c("1971","2001","2022")[YEAR],
          YDAY = (DAYOFYEAR - 200)/30,
@@ -509,6 +508,132 @@ pairs(rubus_emm1)
 pairs(rubus_emm2)
 ```
 
+# Binomial models
+
+## Ancient Woodland Indicator proportion
+
+
+```{r awi prop model final}
+awi_mod2 <- brm(AWI_RICH | trials(SPECIES_RICH) ~ -1 + YR + YDAY + (1|SITE:PLOT) + (YR|SITE) + (1|AWI_region),
+               data = BRLEAF_SUMMARY, family = binomial(),
+               prior = mod_pr, 
+               control = list(adapt_delta = 0.99),
+               cores = 4, warmup = 2000, iter = 6000, thin = 4,
+               file = paste0(model_loc, "AWI_RICH_BIN"))
+summary(awi_mod2)
+```
+
+```{r awi prop model plots}
+mcmc_plot(awi_mod2, type = "rank_overlay")
+pp_check(awi_mod2, type = "ecdf_overlay") 
+```
+
+```{r emmeans awi prop pairwise comparison table}
+awi_emm <- emmeans(awi_mod2, ~ YR)
+pairs(awi_emm, type = "response") %>%
+  knitr::kable(digits = 3)
+```
+
+```{r emmeans awi prop plot}
+awi_emm %>%
+  gather_emmeans_draws() %>%
+  mutate(Year = as.numeric(as.character(YR)),
+         .value = inv_logit_scaled(.value)) %>%
+  ggplot(aes(x = Year, y = .value)) +
+  stat_lineribbon(alpha = 1/4, fill = teal) +
+  theme(axis.text = element_text(size = 12), axis.title = element_text(size = 14)) +
+  labs(y = "AWI proportion")
+```
+
+# Binary models - Regeneration
+
+```{r regen data prep}
+REGEN <- REGEN %>% select(-YEAR) %>% rename(YEAR = YR) %>%
+  inner_join(select(BRLEAF_SUMMARY, SITE_NO, PLOT_NO, YEAR, SITE, PLOT, YDAY, YR)) 
+
+```
+
+```{r bin model sample prior}
+mod_pr <- prior(normal(0,1), class = "b", coef = "YR1971") +
+  prior(normal(0,1), class = "b", coef = "YR2001") +
+  prior(normal(0,1), class = "b", coef = "YR2022") +
+  prior(student_t(5, 0, 1), class = "sd")
+```
+
+```{r bin check prior predictions, cache = TRUE}
+test_mod <- brm(REGEN ~ -1 + YR + (1|SITE/PLOT),
+                data = REGEN, family = "bernoulli",
+                prior = mod_pr, cores = 4, sample_prior = "only")
+plot(test_mod)
+pp_check(test_mod)
+```
+
+## Ash regeneration
+
+```{r ash model final}
+ash_mod <- brm(ASH_REGEN ~ -1 + YR + (1|SITE:PLOT) + (YR|SITE),
+               data = REGEN, family = "bernoulli",
+               prior = mod_pr, cores = 4, warmup = 2000, iter = 6000, thin = 4,
+               file = paste0(model_loc, "ASH_REGEN"))
+par_summary(ash_mod)
+```
+
+```{r ash model plots}
+mcmc_plot(ash_mod, type = "rank_overlay")
+pp_check(ash_mod, type = "stat") 
+```
+
+```{r emmeans ash pairwise comparison table}
+ash_emm <- emmeans(ash_mod, ~ YR)
+pairs(ash_emm, type = "response") %>%
+  knitr::kable(digits = 3)
+```
+
+```{r emmeans ash plot}
+ash_emm %>%
+  gather_emmeans_draws() %>%
+  mutate(Year = as.numeric(as.character(YR)),
+         .value = inv_logit_scaled(.value)) %>%
+  ggplot(aes(x = Year, y = .value)) +
+  stat_lineribbon(alpha = 1/4, fill = teal) +
+  theme(axis.text = element_text(size = 12), axis.title = element_text(size = 14)) +
+  labs(y = "Ash regeneration")
+```
+
+
+## Total regeneration
+
+```{r regen model final}
+regen_mod <- brm(REGEN ~ -1 + YR + (1|SITE/PLOT),
+                 data = REGEN, family = "bernoulli",
+                 prior = mod_pr, cores = 4, warmup = 2000, iter = 6000, thin = 4,
+                 file = paste0(model_loc, "REGEN"),
+                 control = list(adapt_delta = 0.99))
+par_summary(regen_mod)
+```
+
+```{r regen model plots}
+mcmc_plot(regen_mod, type = "rank_overlay")
+pp_check(regen_mod, type = "stat") 
+```
+
+```{r emmeans regen pairwise comparison table}
+regen_emm <- emmeans(regen_mod, ~  YR)
+pairs(regen_emm, type = "response") %>%
+  knitr::kable(digits = 3)
+```
+
+```{r emmeans regen plot}
+regen_emm %>%
+  gather_emmeans_draws() %>%
+  mutate(Year = as.numeric(as.character(YR)),
+         .value = inv_logit_scaled(.value)) %>%
+  ggplot(aes(x = Year, y = .value)) +
+  stat_lineribbon(alpha = 1/4, fill = teal) + 
+  theme(axis.text = element_text(size = 12), axis.title = element_text(size = 14)) +
+  labs(y = "Regeneration")
+```
+
 
 # Site level richness
 
@@ -520,10 +645,6 @@ BRLEAF_SUMMARY <- BRLEAF_SUMM_SITE %>%
             SITE = as.character(SITE_NO),
             EXP_SHANNON = exp(SPECIES_SHANNON),
             INV_SIMPSON = 1/SPECIES_SIMPSON)
-```
-
-```{r, include = FALSE}
-model_loc <- "Outputs/Models/ChangeOverTime/NoNuisanceError/noAR/"
 ```
 
 ```{r count model sample prior v2}
@@ -564,4 +685,52 @@ siterich_emm %>%
   stat_lineribbon(alpha = 1/4, fill = teal) +
   theme(axis.text = element_text(size = 12), axis.title = element_text(size = 14)) +
   labs(y = "Site level richness")
+```
+
+# Site level AWI proportion
+
+```{r site level data prep awi}
+BRLEAF_SUMMARY_SITE <- GRFLORA_SITE %>%
+  mutate(YR = c("1971","2001","2022")[YEAR],
+         YDAY = (DAYOFYEAR - 200)/30,
+         SITE = as.character(SITE_NO)) %>%
+  left_join(select(BRLEAF_SUMMARY, SITE_NO, AWI_region) %>% distinct())
+```
+
+```{r count model sample prior v2}
+mod_pr <- prior(normal(0,1), class = "b") +
+  prior(student_t(5, 0, 1), class = "sd")
+```
+
+```{r awi site rich mod run}
+awi_site_rich_mod <- brm(AWI_RICH | trials(SPECIES_RICH) ~ -1 + YR + YDAY + (1|SITE) + (1|AWI_region),
+                         data = BRLEAF_SUMMARY_SITE, family = binomial(),
+                         prior = mod_pr, cores = 4, warmup = 2000, iter = 6000, thin = 4,
+                         control = list(adapt_delta = 0.95),
+                         file = paste0(model_loc, "SITERICH_AWI_BIN"))
+summary(awi_site_rich_mod)
+```
+
+```{r awi site rich mod plots}
+mcmc_plot(awi_site_rich_mod, type = "rank_overlay")
+pp_check(awi_site_rich_mod, type = "ecdf_overlay", ndraws = 20)
+pp_check(awi_site_rich_mod, type = "stat_2d")
+```
+
+
+```{r emmeans awi site rich pairwise comparison table}
+awisite_emm <- emmeans(awi_site_rich_mod, ~ YR)
+pairs(awisite_emm, type = "response") %>%
+  knitr::kable(digits = 3)
+```
+
+```{r emmeans awi site rich plot}
+awisite_emm %>%
+  gather_emmeans_draws() %>%
+  mutate(Year = as.numeric(as.character(YR)),
+         .value = exp(.value)) %>%
+  ggplot(aes(x = Year, y = .value)) +
+  stat_lineribbon(alpha = 1/4, fill = teal) +
+  theme(axis.text = element_text(size = 12), axis.title = element_text(size = 14)) +
+  labs(y = "Proportion of AWI in site richness")
 ```

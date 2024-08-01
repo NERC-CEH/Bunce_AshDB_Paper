@@ -54,14 +54,11 @@ deerrisk <- read.csv("Metadata/DEER_RISK.csv") %>%
 
 
 ```{r data read}
-BRLEAF_SUMMARY <- read.csv("Outputs/Broadleaf_summary_metrics_meta_SP_DBH.csv")
+BRLEAF_SUMMARY <- read.csv("Outputs/Broadleaf_summary_metrics.csv")
 BRLEAF_SUMMARY <- BRLEAF_SUMMARY %>%
-  rename(DEERPLOTS = DEER) %>%
-  inner_join(deerrisk, by = "SITE_NO") %>%
+  inner_join(deerrisk, by = c("SITE_NO" = "SITE_NUMBER")) %>%
   mutate(YR = c("1971","2001","2022")[YEAR],
          YDAY = (DAYOFYEAR - 200)/30,
-         across(ends_with("_COVER"), \(x) ifelse(x > 100, 1, 0.01*x),
-                .names = "PROP_{.col}"),
          SITE = as.character(SITE_NO),
          PLOT = paste(SITE_NO, PLOT_NO, sep = "_"),
          DEER = factor(DEER, c("Low","Moderate","High"),
@@ -610,6 +607,160 @@ rubus_emm %>%
   labs(y = "Bramble cover")
 ```
 
+# Binomial models 
+
+## AWI proportion
+
+```{r awi prop model final}
+mod_pr <- prior(normal(0,1), class = "b", coef = "YR1971") +
+  prior(normal(0,1), class = "b", coef = "YR2001") +
+  prior(normal(0,1), class = "b", coef = "YR2022") +
+  prior(normal(0,1), class = "b", coef = "YDAY") +
+  prior(normal(0,1), class = "b", coef = "moDEER") +
+  prior(normal(0,1), class = "b", coef = "moDEER:YR2001") +
+  prior(normal(0,1), class = "b", coef = "moDEER:YR2022") +
+  prior(dirichlet(1), class = "simo", coef = "moDEER1") +
+  prior(dirichlet(1), class = "simo", coef = "moDEER:YR20011") +
+  prior(dirichlet(1), class = "simo", coef = "moDEER:YR20221") +
+  prior(student_t(5, 0, 1), class = "sd")
+awi_mod2 <- brm(AWI_RICH | trials(SPECIES_RICH) ~ -1 + YR*mo(DEER) + YDAY + (1|SITE/PLOT) + (1|AWI_region),
+                data = BRLEAF_SUMMARY, family = binomial(),
+                prior = mod_pr, 
+                cores = 4, warmup = 2000, iter = 6000, thin = 4,
+                control = list(adapt_delta = 0.99),
+                file = paste0(model_loc, "AWI_RICH_BIN"))
+par_summary(awi_mod2)
+```
+
+```{r awi prop model plots}
+mcmc_plot(awi_mod2, type = "rank_overlay")
+pp_check(awi_mod2, type = "ecdf_overlay")
+```
+
+```{r emmeans awi prop pairwise comparison table}
+awi_emm <- emmeans(awi_mod2, ~ DEER | YR)
+pairs(awi_emm, type = "response") %>%
+  knitr::kable(digits = 3)
+```
+
+```{r emmeans awi prop plot}
+awi_emm %>%
+  gather_emmeans_draws() %>%
+  mutate(Year = as.numeric(as.character(YR)),
+         .value = inv_logit_scaled(.value)) %>%
+  ggplot(aes(x = Year, y = .value, colour = DEER, fill = DEER)) +
+  stat_lineribbon(alpha = 1/4) +
+  scale_fill_manual(values = two_cols,
+                    aesthetics = c("colour","fill"),
+                    name = "Deer Risk") +
+  theme(axis.text = element_text(size = 12), axis.title = element_text(size = 14)) +
+  labs(y = "AWI proportion")
+```
+
+
+# Binary models - regeneration
+
+```{r regen data prep}
+REGEN <- read.csv("Outputs/REGEN.csv")
+REGEN <- REGEN %>%
+  inner_join(select(BRLEAF_SUMMARY, SITE_NO, PLOT_NO, YEAR, YDAY, SITE, PLOT, DEER,YR)) 
+```
+
+```{r bin model sample prior}
+mod_pr <- prior(normal(0,1), class = "b", coef = "YR1971") +
+  prior(normal(0,1), class = "b", coef = "YR2001") +
+  prior(normal(0,1), class = "b", coef = "YR2022") +
+  prior(normal(0,1), class = "b") +
+  prior(student_t(5, 0, 1), class = "sd")
+```
+
+```{r bin check prior predictions, cache = TRUE}
+test_mod <- brm(REGEN ~ -1 + YR*mo(DEER) + (1|SITE/PLOT),
+                data = REGEN, family = "bernoulli",
+                prior = mod_pr, cores = 4, sample_prior = "only")
+plot(test_mod)
+pp_check(test_mod)
+pp_check(test_mod, "ecdf_overlay", ndraws = 20)
+```
+
+
+
+## Ash regeneration
+
+```{r ash model final}
+ash_mod <- brm(ASH_REGEN ~ -1 + YR*mo(DEER) + (1|SITE/PLOT),
+               data = REGEN, family = "bernoulli",
+               prior = mod_pr, cores = 4, warmup = 2000, iter = 6000, thin = 4,
+               file = paste0(model_loc, "ASH_REGEN"))
+par_summary(ash_mod)
+```
+
+```{r ash model plots}
+mcmc_plot(ash_mod, type = "rank_overlay")
+pp_check(ash_mod, type = "stat")
+```
+
+```{r emmeans ash pairwise comparison table}
+ash_emm <- emmeans(ash_mod, ~ DEER | YR)
+pairs(ash_emm, type = "response") %>%
+  knitr::kable(digits = 3)
+```
+
+```{r emmeans ash plot}
+ash_emm %>%
+  gather_emmeans_draws() %>%
+  mutate(Year = as.numeric(as.character(YR)),
+         .value = inv_logit_scaled(.value)) %>%
+  ggplot(aes(x = Year, y = .value, colour = DEER, fill = DEER)) +
+  stat_lineribbon(alpha = 1/4) +
+  scale_fill_manual(values = two_cols,
+                    aesthetics = c("colour","fill"),
+                    name = "Deer Risk") +
+  theme(axis.text = element_text(size = 12), axis.title = element_text(size = 14)) +
+  labs(y = "Ash regeneration")
+```
+
+## Total regeneration
+
+```{r regen model final}
+regen_mod <- brm(REGEN ~ -1 + YR*mo(DEER) + (1|SITE/PLOT),
+                 data = REGEN, family = "bernoulli",
+                 prior = mod_pr, cores = 4, warmup = 2000, iter = 6000, thin = 4,
+                 file = paste0(model_loc, "REGEN"))
+par_summary(regen_mod)
+```
+
+```{r regen model plots}
+mcmc_plot(regen_mod, type = "rank_overlay")
+pp_check(regen_mod, type = "stat") 
+```
+
+```{r emmeans regen pairwise comparison table}
+regen_emm <- emmeans(regen_mod, ~ DEER | YR)
+pairs(regen_emm, type = "response") %>%
+  knitr::kable(digits = 3)
+```
+
+```{r emmeans regen plot}
+regen_emm %>%
+  gather_emmeans_draws() %>%
+  mutate(Year = as.numeric(as.character(YR)),
+         .value = inv_logit_scaled(.value)) %>%
+  ggplot(aes(x = Year, y = .value, colour = DEER, fill = DEER)) +
+  stat_lineribbon(alpha = 1/4) +
+  scale_fill_manual(values = two_cols,
+                    aesthetics = c("colour","fill"),
+                    name = "Deer Risk") +
+  theme(axis.text = element_text(size = 12), axis.title = element_text(size = 14)) +
+  labs(y = "Total regeneration")
+```
+
+```{r emmeans by year regen pairwise comparison table}
+regen_emm <- emmeans(regen_mod, ~ YR | DEER)
+pairs(regen_emm, type = "response") %>%
+  knitr::kable(digits = 3)
+```
+
 
 # Site level richness
 
@@ -672,5 +823,60 @@ siterich_emm %>%
   theme(axis.text = element_text(size = 12), axis.title = element_text(size = 14)) +
   labs(y = "Site-level Species Richness")
 ```
+
+
+# Site level AWI proportion
+
+```{r site level awi data prep}
+GRFLORA_SITE <- read.csv("Outputs/Site level richness with AWI.csv")
+BRLEAF_SUMMARY_SITE <- GRFLORA_SITE %>%
+  mutate(YR = c("1971","2001","2022")[YEAR],
+         YDAY = (DAYOFYEAR - 200)/30,
+         SITE = as.character(SITE_NO)) %>%
+  left_join(select(BRLEAF_SUMMARY, SITE_NO, AWI_region) %>% distinct()) %>%
+  inner_join(deerrisk) %>%
+  mutate(DEER = factor(DEER, c("Low","Moderate","High"),
+                       ordered = TRUE))
+```
+
+```{r binomial model sample prior site level}
+mod_pr <- prior(normal(0,1), class = "b") +
+  prior(student_t(5, 0, 1), class = "sd")
+```
+
+```{r awi site rich mod run}
+awisite_mod <- brm(AWI_RICH | trials(SPECIES_RICH) ~ -1 + YR*mo(DEER) + YDAY + (1|SITE) + (1|AWI_region),
+                   data = BRLEAF_SUMMARY_SITE, family = binomial(),
+                   prior = mod_pr, cores = 4, warmup = 2000, iter = 6000, thin = 4,
+                   control = list(adapt_delta = 0.95),
+                   file = paste0(model_loc, "SITERICH_AWI_BIN"))
+par_summary(awisite_mod)
+```
+
+```{r awi site rich mod plots}
+mcmc_plot(awisite_mod, type = "rank_overlay")
+pp_check(awisite_mod, type = "ecdf_overlay", ndraws = 20)
+```
+
+```{r emmeans awi site richness pairwise comparison table}
+awisite_emm <- emmeans(awisite_mod, ~ DEER | YR)
+pairs(awisite_emm, type = "response") %>%
+  knitr::kable(digits = 3, caption = "Site level AWI proportion on response-scale")
+```
+
+```{r emmeans awi site richness plot}
+awisite_emm %>%
+  gather_emmeans_draws() %>%
+  mutate(Year = as.numeric(as.character(YR)),
+         .value = exp(.value)) %>%
+  ggplot(aes(x = Year, y = .value, colour = DEER, fill = DEER)) +
+  stat_lineribbon(alpha = 1/4) +
+  scale_fill_manual(values = two_cols,
+                    aesthetics = c("colour","fill"),
+                    name = "Deer Risk") +
+  theme(axis.text = element_text(size = 12), axis.title = element_text(size = 14)) +
+  labs(y = "Site-level AWI proportion")
+```
+
 
 
