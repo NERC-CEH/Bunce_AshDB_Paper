@@ -35,7 +35,11 @@ GRFLORA_ALL <- GRFLORA22 %>%
               distinct() %>%
               group_by(SITE_NO, PLOT_NO, BRC_NUMBER, YEAR) %>%
               summarise(TOTAL_COVER = sum(COV)) %>%
-              mutate(TOTAL_COVER = ifelse(is.na(TOTAL_COVER) | TOTAL_COVER < 1 | is.infinite(TOTAL_COVER), 1, TOTAL_COVER))) %>%
+              mutate(
+                TOTAL_COVER = ifelse(is.na(TOTAL_COVER) | 
+                                       TOTAL_COVER < 1 | 
+                                       is.infinite(TOTAL_COVER),
+                                     1, TOTAL_COVER))) %>%
   filter(!is.na(BRC_NUMBER)) %>%
   select(-BRC_NAMES) %>%
   mutate(BRC_NUMBER = round(BRC_NUMBER, 1)) %>%
@@ -218,13 +222,17 @@ DBH_ALL <- DBH22 %>%
          MULTI_ID = ifelse(MULTI == "Yes",MULTI_ID,as.character(ROWID))) %>%
   # group_by(SITE_NO, PLOT_NO, SPECIES, DEAD_LIVE, MULTI_ID) %>%
   # summarise(DBH_CLASS = max(DBH_CLASS), .groups = "drop") %>%
-  select(SITE_NO, PLOT_NO, DBH_CLASS, AMALGAM_NAMES = SPECIES, DEAD_LIVE) %>%
+  select(SITE_NO, PLOT_NO, DBH_CLASS, AMALGAM_NAMES = SPECIES, 
+         DEAD_LIVE, QUARTER) %>%
   filter(AMALGAM_NAMES != "None") %>%
   # fix typo
-  mutate(AMALGAM_NAMES = ifelse(AMALGAM_NAMES == "Aesculus hippocastanus","Aesculus hippocastanum", AMALGAM_NAMES),
+  mutate(AMALGAM_NAMES = ifelse(AMALGAM_NAMES == "Aesculus hippocastanus",
+                                "Aesculus hippocastanum", AMALGAM_NAMES),
          YR = 3) %>%
   left_join(TREE_AMALGAMS, by = "AMALGAM_NAMES") %>%
   select(-AMALG_BRC_CODE) %>% rename(AMALG_BRC_CODE = ACTUAL_AMALG_BRC_CODE) %>%
+  filter((QUARTER %in% c(1,3) & DBH_TREE_SHRUB %in% c("T","S")) |
+           (QUARTER %in% c(2,4) & DBH_TREE_SHRUB == "T" & DBH_CLASS > 1)) %>%
   count(SITE_NO, PLOT_NO, DBH_CLASS, AMALG_BRC_CODE, AMALGAM_NAMES, YR, DEAD_LIVE) %>%
   rename(COUNT = n) %>%
   bind_rows(select(DBH7101, SITE_NO = Site, PLOT_NO = Plot, DBH_CLASS = DBHclass,

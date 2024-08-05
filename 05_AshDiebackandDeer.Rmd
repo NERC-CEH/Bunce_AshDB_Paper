@@ -814,7 +814,6 @@ siterich_emm %>%
 # Site level AWI proportion
 
 ```{r awi site level data prep}
-GRFLORA_SITE <- read.csv("Outputs/Site level richness with AWI.csv")
 BRLEAF_SUMMARY_SITE <- GRFLORA_SITE %>%
   mutate(YR = c("1971","2001","2022")[YEAR],
          YDAY = (DAYOFYEAR - 200)/30,
