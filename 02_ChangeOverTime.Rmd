@@ -727,30 +727,7 @@ awisite_emm %>%
   labs(y = "Proportion of AWI in site richness")
 ```
 
-# Site-level Beta Diversity
 
-```{r gauss model sample prior v2}
-mod_pr <- prior(normal(4,1), class = "b", coef = "YR1971") +
-  prior(normal(4,1), class = "b", coef = "YR2001") +
-  prior(normal(4,1), class = "b", coef = "YR2022") +
-  prior(normal(0,1), class = "b", coef = "YDAY") +
-  prior(student_t(5, 0, 1), class = "sd")
-```
-
-```{r site rich mod run}
-site_beta_mod <- brm(BETA ~ -1 + YR + YDAY + (1|SITE),
-                     data = BRLEAF_SUMM_SITE, family = "gaussian",
-                     prior = mod_pr, cores = 4, warmup = 2000, iter = 6000, thin = 4,
-                     file = paste0(model_loc, "SITEBETA"))
-par_summary(site_beta_mod)
-```
-
-```{r site beta mod plots}
-mcmc_plot(site_beta_mod, type = "rank_overlay")
-pp_check(site_beta_mod, type = "ecdf_overlay", ndraws = 20)
-pp_check(site_beta_mod, type = "stat_2d")
-resid_bysite(site_beta_mod)
-```
 
 
 ```{r emmeans site beta pairwise comparison table}

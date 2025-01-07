@@ -213,10 +213,6 @@ BRLEAF_SUMM_SITE <- BLEAF_META %>%
   inner_join(GRFLORA_SITE) %>%
   inner_join(GRFLORA_AWI_SITE)
 
-BRLEAF_SUMM_SITE <- BRLEAF_SUMMARY %>% group_by(SITE_NO, YEAR) %>% 
-  summarise(MEAN_ALPHA = mean(SPECIES_RICH), .groups = "drop") %>% 
-  right_join(BRLEAF_SUMM_SITE) %>%
-  mutate(BETA = SPECIES_RICH/MEAN_ALPHA)
 
 write.csv(BRLEAF_SUMM_SITE, "Outputs/Site level richness.csv",
           row.names = FALSE)
