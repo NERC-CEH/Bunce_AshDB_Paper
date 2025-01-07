@@ -192,6 +192,15 @@ GRFLORA_AWI_SITE <- GRFLORA_ALL %>% ungroup() %>%
 BRLEAF_SUMMARY <- left_join(BRLEAF_SUMMARY, GRFLORA_AWI) %>%
   mutate(AWI_RICH = tidyr::replace_na(AWI_RICH, 0))
 
+regions <- select(PLDATA7101, SITE, COUNTRY) %>% filter(COUNTRY != "") %>%
+  left_join(AWI_sites, by = c("SITE" = "SITE_NO")) %>%
+  mutate(REGION = ifelse(COUNTRY %in% c("Scotland","Wales"),
+                         COUNTRY,
+                         ifelse(AWI_region == "EastMidlands","NorthEast",
+                                ifelse(AWI_region %in% c("South","East"),"SouthEast", 
+                                       ifelse(AWI_region == "WalesandNW","NorthWest",AWI_region)))))
+write.csv(regions, "Outputs/regions.csv", row.names = FALSE)
+
 
 # Site-level data
 BRLEAF_SUMM_SITE <- BLEAF_META %>% 
@@ -203,6 +212,11 @@ BRLEAF_SUMM_SITE <- BLEAF_META %>%
   mutate(ASHDIEBACK = ASHDIEBACK/NPLOT) %>%
   inner_join(GRFLORA_SITE) %>%
   inner_join(GRFLORA_AWI_SITE)
+
+BRLEAF_SUMM_SITE <- BRLEAF_SUMMARY %>% group_by(SITE_NO, YEAR) %>% 
+  summarise(MEAN_ALPHA = mean(SPECIES_RICH), .groups = "drop") %>% 
+  right_join(BRLEAF_SUMM_SITE) %>%
+  mutate(BETA = SPECIES_RICH/MEAN_ALPHA)
 
 write.csv(BRLEAF_SUMM_SITE, "Outputs/Site level richness.csv",
           row.names = FALSE)
@@ -456,7 +470,7 @@ deerrisk <- read.csv("Metadata/DEER_RISK.csv") %>%
   mutate(DEER = ifelse(DEER == "None", "Low", DEER))
 
 
-# Regeneration
+# Regeneration ####
 TOTAL_REGEN <- PLDATA22 %>%
   filter(CODE_GROUP == "B" & CODE < 100) %>%
   select(SITE_NO, PLOT_NO) %>%
@@ -491,3 +505,4 @@ REGEN <- full_join(TOTAL_REGEN, ASH_REGEN) %>%
   select(-YEAR) %>% rename(YEAR = YR)
 write.csv(REGEN, "Outputs/REGEN.csv",
           row.names = FALSE)
+

@@ -26,29 +26,7 @@ options(width = 300)
 
 
 ```{r, include = FALSE}
-par_summary <- function(x, digits = 3, ...){
-  summ <- par_summary(x)
-  fixef <- summ$fixed
-  rand1 <- summ$random[[1]]
-  rownames(rand1) <- paste0("SITE__",rownames(rand1))
-  if(length(summ$random)>1){
-    rand2 <- summ$random[[2]]
-    rownames(rand2) <- paste0("SITE:PLOT__",rownames(rand2))
-  } else{
-    rand2 <- rand1[0,]
-  }
-  cor_pars <- summ$cor_pars
-  spec_pars <- summ$spec_pars
-  if("mo" %in% names(summ)){
-    mo <- summ$mo
-    rownames(mo) <- paste0("smplx__", rownames(mo))
-    all <- do.call(rbind, list(fixef, rand1, rand2, spec_pars, mo))
-  } else{
-    all <- do.call(rbind, list(fixef, rand1, rand2, spec_pars))
-  }
-  all[,c("Bulk_ESS","Tail_ESS")] <- floor(all[,c("Bulk_ESS","Tail_ESS")])
-  knitr::kable(all, digits = digits, ...)
-}
+source("Helper_functions.R")
 ```
 
 
@@ -68,6 +46,7 @@ BRLEAF_SUMMARY <- BRLEAF_SUMMARY %>%
                 .names = "PROP_{.col}"),
          SITE = as.character(SITE_NO),
          PLOT = paste(SITE_NO, PLOT_NO, sep = "_"))
+regions <- read.csv("Outputs/regions.csv")
 ```
 
 
@@ -112,6 +91,7 @@ par_summary(rich_mod)
 ```{r richness model plots}
 mcmc_plot(rich_mod, type = "rank_overlay")
 pp_check(rich_mod, type = "ecdf_overlay", ndraws = 20)
+resid_bysite(rich_mod)
 ```
 
 
@@ -156,6 +136,7 @@ par_summary(stem_mod)
 ```{r stem model plots}
 mcmc_plot(stem_mod, type = "rank_overlay")
 pp_check(stem_mod, type = "ecdf_overlay", ndraws = 20)
+resid_bysite(stem_mod)
 ```
 
 
@@ -198,6 +179,7 @@ par_summary(treerich_mod)
 ```{r treerich model plots}
 mcmc_plot(treerich_mod, type = "rank_overlay")
 pp_check(treerich_mod, type = "ecdf_overlay", ndraws = 20)
+resid_bysite(treerich_mod)
 ```
 
 
@@ -272,6 +254,7 @@ par_summary(shan_mod)
 ```{r species diversity model plots}
 mcmc_plot(shan_mod, type = "rank_overlay")
 pp_check(shan_mod, type = "ecdf_overlay", ndraws = 20)
+resid_bysite(shan_mod)
 ```
 
 ```{r emmeans shannon pairwise comparison table}
@@ -321,6 +304,7 @@ par_summary(basal_mod)
 mcmc_plot(basal_mod, type = "rank_overlay")
 pp_check(basal_mod, type = "ecdf_overlay", ndraws = 20) +
   scale_x_continuous(limits = c(0,5000))
+resid_bysite(basal_mod)
 ```
 
 ```{r emmeans basal pairwise comparison table}
@@ -395,6 +379,7 @@ par_summary(forb_mod)
 mcmc_plot(forb_mod, type = "rank_overlay")
 pp_check(forb_mod, type = "ecdf_overlay", ndraws = 20) +
   scale_x_continuous(limits = c(0,250))
+resid_bysite(forb_mod)
 ```
 
 ```{r emmeans forb pairwise comparison table}
@@ -432,6 +417,7 @@ par_summary(fern_mod)
 mcmc_plot(fern_mod, type = "rank_overlay")
 pp_check(fern_mod, type = "ecdf_overlay", ndraws = 20) +
   scale_x_continuous(limits = c(0,250))
+resid_bysite(fern_mod)
 ```
 
 ```{r emmeans fern pairwise comparison table}
@@ -469,6 +455,7 @@ par_summary(grass_mod)
 mcmc_plot(grass_mod, type = "rank_overlay")
 pp_check(grass_mod, type = "ecdf_overlay", ndraws = 20) +
   scale_x_continuous(limits = c(0,250))
+resid_bysite(grass_mod)
 ```
 
 ```{r emmeans grass pairwise comparison table}
@@ -506,6 +493,7 @@ par_summary(wood_mod)
 mcmc_plot(wood_mod, type = "rank_overlay")
 pp_check(wood_mod, type = "ecdf_overlay", ndraws = 20) +
   scale_x_continuous(limits = c(0,250))
+resid_bysite(wood_mod)
 ```
 
 ```{r emmeans wood pairwise comparison table}
@@ -545,6 +533,7 @@ par_summary(rubus_mod)
 mcmc_plot(rubus_mod, type = "rank_overlay")
 pp_check(rubus_mod, type = "ecdf_overlay", ndraws = 20) +
   scale_x_continuous(limits = c(0,150))
+resid_bysite(rubus_mod)
 ```
 
 ```{r emmeans rubus pairwise comparison table}
@@ -595,6 +584,7 @@ summary(awi_mod2)
 ```{r awi prop model plots}
 mcmc_plot(awi_mod2, type = "rank_overlay")
 pp_check(awi_mod2, type = "stat")
+resid_bysite(awi_mod2)
 ```
 
 ```{r emmeans awi prop pairwise comparison table}
@@ -658,6 +648,7 @@ par_summary(ash_mod)
 ```{r ash model plots}
 mcmc_plot(ash_mod, type = "rank_overlay")
 pp_check(ash_mod, type = "stat")
+resid_bysite(ash_mod)
 ```
 
 ```{r emmeans ash pairwise comparison table}
@@ -694,6 +685,7 @@ par_summary(regen_mod)
 ```{r regen model plots}
 mcmc_plot(regen_mod, type = "rank_overlay")
 pp_check(regen_mod, type = "stat") 
+resid_bysite(regen_mod)
 ```
 
 ```{r emmeans regen pairwise comparison table}
@@ -722,13 +714,11 @@ regen_emm %>%
 
 ```{r site level data prep}
 BRLEAF_SUMM_SITE <- read.csv("Outputs/Site level richness.csv")
-BRLEAF_SUMMARY <- BRLEAF_SUMM_SITE %>%
+BRLEAF_SUMM_SITE <- BRLEAF_SUMM_SITE %>%
   filter(SITE_NO %in% ash_sites) %>%
   mutate(YR = c("1971","2001","2022")[YEAR],
          YDAY = (DAYOFYEAR - 200)/30,
-         SITE = as.character(SITE_NO),
-         EXP_SHANNON = exp(SPECIES_SHANNON),
-         INV_SIMPSON = 1/SPECIES_SIMPSON)
+         SITE = as.character(SITE_NO))
 ```
 
 ```{r count model sample prior v2}
@@ -744,7 +734,7 @@ mod_pr <- prior(normal(2,1), class = "b", coef = "YR1971") +
 
 ```{r site rich mod run}
 site_rich_mod <- brm(SPECIES_RICH ~ -1 + YR*ASHDIEBACK + YDAY + (1|SITE),
-                     data = BRLEAF_SUMMARY, family = "negbinomial",
+                     data = BRLEAF_SUMM_SITE, family = "negbinomial",
                      prior = mod_pr, cores = 4, warmup = 2000, iter = 6000, thin = 4,
                      file = paste0(model_loc, "SITERICH_NB"))
 par_summary(site_rich_mod)
@@ -753,6 +743,7 @@ par_summary(site_rich_mod)
 ```{r site rich mod plots}
 mcmc_plot(site_rich_mod, type = "rank_overlay")
 pp_check(site_rich_mod, type = "ecdf_overlay", ndraws = 20)
+resid_bysite(site_rich_mod)
 ```
 
 
@@ -818,6 +809,7 @@ par_summary(awisite_mod)
 ```{r awi site rich mod plots}
 mcmc_plot(awisite_mod, type = "rank_overlay")
 pp_check(awisite_mod, type = "ecdf_overlay", ndraws = 20)
+resid_bysite(awisite_mod)
 ```
 
 
@@ -852,4 +844,66 @@ awisite_mod %>%
                     name = "Ash Dieback") +
   theme(axis.text = element_text(size = 12), axis.title = element_text(size = 14)) +
   labs(y = "Site level AWI proportion")
+```
+
+
+# Site-level beta diversity
+
+```{r gauss model prior v2}
+mod_pr <- prior(normal(4,1), class = "b", coef = "YR1971") +
+  prior(normal(4,1), class = "b", coef = "YR2001") +
+  prior(normal(4,1), class = "b", coef = "YR2022") +
+  prior(normal(0,1), class = "b", coef = "YDAY") +
+  prior(normal(0,1), class = "b", coef = "ASHDIEBACK") +
+  prior(normal(0,1), class = "b", coef = "YR2001:ASHDIEBACK") +
+  prior(normal(0,1), class = "b", coef = "YR2022:ASHDIEBACK") +
+  prior(student_t(5, 0, 1), class = "sd")
+```
+
+```{r site beta mod run}
+site_beta_mod <- brm(BETA ~ -1 + YR*ASHDIEBACK + YDAY + (1|SITE),
+                     data = BRLEAF_SUMM_SITE, family = "gaussian",
+                     prior = mod_pr, cores = 4, warmup = 2000, iter = 6000, thin = 4,
+                     file = paste0(model_loc, "SITEBETA"))
+par_summary(site_beta_mod)
+```
+
+```{r site beta mod plots}
+mcmc_plot(site_beta_mod, type = "rank_overlay")
+pp_check(site_beta_mod, type = "ecdf_overlay", ndraws = 20)
+resid_bysite(site_beta_mod)
+```
+
+
+```{r cond effect site beta plot}
+plot(conditional_effects(site_beta_mod, "ASHDIEBACK:YR"),
+     plot = FALSE)[[1]] +
+  labs(x = "Proportion of plots with ash dieback",
+       y = "Site level species richness") +
+  scale_fill_manual(name = "Year",
+                    values = c("#56B4E9","#CC79A7","#D55E00"),
+                    aesthetics = c("fill","colour"))
+```
+
+```{r emtrends site beta}
+emtrends(site_beta_mod, ~ YR, var = "ASHDIEBACK") %>%
+  knitr::kable(digits = 3, caption = "Ash dieback trend")
+```
+
+
+```{r emmeans site beta plot}
+sitebeta_emm <- emmeans(site_beta_mod, ~ ASHDIEBACK + YR, 
+                        at = list(ASHDIEBACK = c(0,0.2,0.7)))
+sitebeta_emm %>%
+  gather_emmeans_draws() %>%
+  mutate(Year = as.numeric(as.character(YR)),
+         .value = exp(.value),
+         ASHDIEBACK = as.character(ASHDIEBACK)) %>%
+  ggplot(aes(x = Year, y = .value, colour = ASHDIEBACK, fill = ASHDIEBACK)) +
+  stat_lineribbon(alpha = 1/4) +
+  scale_fill_manual(values = two_cols,
+                    aesthetics = c("colour","fill"),
+                    name = "Ash Dieback") +
+  theme(axis.text = element_text(size = 12), axis.title = element_text(size = 14)) +
+  labs(y = "Site level beta diversity")
 ```
