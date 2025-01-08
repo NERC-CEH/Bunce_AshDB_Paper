@@ -1,4 +1,9 @@
 EIDC/
 .Rhistory
 Outputs/
-
+*.html
+*.RData
+*.rdb
+*.rdx
+*.png
+*__packages

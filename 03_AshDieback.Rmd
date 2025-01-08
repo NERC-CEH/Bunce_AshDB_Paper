@@ -32,6 +32,8 @@ source("Helper_functions.R")
 
 
 ```{r data read}
+ash_plots <- read.csv("Outputs/ash_plots.csv")
+ash_sites <- unique(ash_plots$SITE_NO)
 BRLEAF_SUMMARY <- read.csv("Outputs/Broadleaf_summary_metrics.csv")
 BRLEAF_SUMMARY <- BRLEAF_SUMMARY %>%
   full_join(ash_plots) %>%
@@ -782,15 +784,6 @@ siterich_emm %>%
 
 # Site level AWI proportion
 
-```{r site level awi data prep}
-BRLEAF_SUMMARY_SITE <- GRFLORA_SITE %>%
-  mutate(YR = c("1971","2001","2022")[YEAR],
-         YDAY = (DAYOFYEAR - 200)/30,
-         SITE = as.character(SITE_NO)) %>%
-  left_join(select(BRLEAF_SUMMARY, SITE_NO, AWI_region) %>% distinct()) %>%
-  filter(SITE_NO %in% ash_sites)
-
-```
 
 ```{r binomial model awi sample prior v2}
 mod_pr <- prior(normal(0,1), class = "b") +
@@ -799,7 +792,7 @@ mod_pr <- prior(normal(0,1), class = "b") +
 
 ```{r awi site rich mod run}
 awisite_mod <- brm(AWI_RICH | trials(SPECIES_RICH) ~ -1 + YR*ASHDIEBACK + YDAY + (1|SITE) + (1|AWI_region),
-                   data = BRLEAF_SUMMARY_SITE, family = binomial(),
+                   data = BRLEAF_SUMM_SITE, family = binomial(),
                    prior = mod_pr, cores = 4, warmup = 2000, iter = 6000, thin = 4,
                    control = list(adapt_delta = 0.95),
                    file = paste0(model_loc, "SITERICH_AWI_BIN"))

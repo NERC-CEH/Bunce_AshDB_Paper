@@ -22,32 +22,11 @@ theme_set(theme_classic())
 library(patchwork)
 teal <- "#0383a4"
 two_cols <- c("#999999","#0072B2","#E69F00")
+model_loc <- "Outputs/Models/Multivariate_Models/"
 ```
 
 ```{r, include = FALSE}
-par_summary <- function(x, digits = 3, ...){
-  summ <- summary(x)
-  fixef <- summ$fixed
-  rand1 <- summ$random[[1]]
-  rownames(rand1) <- paste0("SITE__",rownames(rand1))
-  if(length(summ$random)>1){
-    rand2 <- summ$random[[2]]
-    rownames(rand2) <- paste0("SITE:PLOT__",rownames(rand2))
-  } else{
-    rand2 <- rand1[0,]
-  }
-  cor_pars <- summ$cor_pars
-  spec_pars <- summ$spec_pars
-  if("mo" %in% names(summ)){
-    mo <- summ$mo
-    rownames(mo) <- paste0("smplx__", rownames(mo))
-    all <- do.call(rbind, list(fixef, rand1, rand2, spec_pars, mo))
-  } else{
-    all <- do.call(rbind, list(fixef, rand1, rand2, spec_pars))
-  }
-  all[,c("Bulk_ESS","Tail_ESS")] <- floor(all[,c("Bulk_ESS","Tail_ESS")])
-  knitr::kable(all, digits = digits, ...)
-}
+source("Helper_functions.R")
 ```
 
 
@@ -57,6 +36,9 @@ par_summary <- function(x, digits = 3, ...){
 deerrisk <- read.csv("Metadata/DEER_RISK.csv") %>%
   mutate(DEER = ifelse(DEER == "None", "Low", DEER)) %>%
   rename(SITE_NO = SITE_NUMBER)
+regions <- read.csv("Outputs/regions.csv")
+ash_plots <- read.csv("Outputs/ash_plots.csv")
+ash_sites <- unique(ash_plots$SITE_NO)
 ```
 
 ```{r data read}
@@ -88,16 +70,12 @@ BRLEAF_SUMMARY <- inner_join(BRLEAF_SUMMARY, Climate_data) %>%
          Winter_rainfall = (Winter_rainfall - 300)/100,
          Summer_tasmax = (Summer_tasmax - 19),
          Winter_tasmin = (Winter_tasmin - 1))
-REGEN <- read.csv("Outputs/REGEN_ASHDEER.csv") %>%
+REGEN <- read.csv("Outputs/REGEN.csv") %>%
   select(SITE_NO, PLOT_NO, YEAR, ends_with("REGEN")) %>% distinct()
 BRLEAF_SUMMARY <- inner_join(BRLEAF_SUMMARY, REGEN)
 ```
 
 # Multivariate Model
-
-```{r mult model loc, include = FALSE}
-model_loc <- "Outputs/Models/Multivariate_Models/"
-```
 
 ## Full model
 
@@ -194,6 +172,11 @@ pp_check(sem_allclim, resp = "SPECIESRICH", ndraws = 20, type = "ecdf_overlay") 
   scale_x_continuous(limits = c(0,100))
 pp_check(sem_allclim, resp = "REGEN", ndraws = 20, type = "ecdf_overlay") 
 ```
+
+```{r}
+resid_bysite_mult(sem_allclim)
+```
+
 
 
 ```{r full model kfold}
@@ -562,7 +545,7 @@ model_structure <-
 ```
 
 
-```{r run winter sr med model}
+```{r run winter regen med model}
 sem_win_regmed <- brm(model_structure, data = BRLEAF_SUMMARY, 
                      prior = mod_pr_nodeer +
                        prior(dirichlet(1), class = "simo", resp = "SPECIESRICH", coef = "moDEER1"),
@@ -571,7 +554,7 @@ sem_win_regmed <- brm(model_structure, data = BRLEAF_SUMMARY,
 par_summary(sem_win_regmed)
 ```
 
-```{r winter model kfold}
+```{r winter regen med model kfold}
 sem_win_regmed <- add_criterion(sem_win_regmed, "kfold", folds = folds,
                              file = paste0(model_loc, "SEM_WinterClim_RegenMed"))
 ```

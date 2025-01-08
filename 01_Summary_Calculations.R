@@ -190,7 +190,8 @@ GRFLORA_AWI_SITE <- GRFLORA_ALL %>% ungroup() %>%
 
 
 BRLEAF_SUMMARY <- left_join(BRLEAF_SUMMARY, GRFLORA_AWI) %>%
-  mutate(AWI_RICH = tidyr::replace_na(AWI_RICH, 0))
+  mutate(AWI_RICH = tidyr::replace_na(AWI_RICH, 0)) %>%
+  left_join(AWI_sites, by = "SITE_NO")
 
 regions <- select(PLDATA7101, SITE, COUNTRY) %>% filter(COUNTRY != "") %>%
   left_join(AWI_sites, by = c("SITE" = "SITE_NO")) %>%
@@ -211,7 +212,8 @@ BRLEAF_SUMM_SITE <- BLEAF_META %>%
             ASHDIEBACK = sum(ASHDIEBACK, na.rm = TRUE), .groups = "drop") %>%
   mutate(ASHDIEBACK = ASHDIEBACK/NPLOT) %>%
   inner_join(GRFLORA_SITE) %>%
-  inner_join(GRFLORA_AWI_SITE)
+  inner_join(GRFLORA_AWI_SITE) %>%
+  left_join(AWI_sites, by = "SITE_NO")
 
 
 write.csv(BRLEAF_SUMM_SITE, "Outputs/Site level richness.csv",
@@ -459,6 +461,8 @@ Climate_data <- pivot_longer(Clim_data,
 ash_plots <- filter(DBH22, SITE_NO < 200 & 
                       SPECIES == "Fraxinus excelsior") %>% 
   select(SITE_NO, PLOT_NO) %>% unique() %>% mutate(ASHPRESENT = TRUE)
+write.csv(ash_plots, "Outputs/ash_plots.csv",
+          row.names = FALSE)
 ash_sites <- unique(ash_plots$SITE_NO)
 
 # deer risk

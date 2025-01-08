@@ -35,6 +35,8 @@ source("Helper_functions.R")
 deerrisk <- read.csv("Metadata/DEER_RISK.csv") %>%
   mutate(DEER = ifelse(DEER == "None", "Low", DEER))
 regions <- read.csv("Outputs/regions.csv")
+ash_plots <- read.csv("Outputs/ash_plots.csv")
+ash_sites <- unique(ash_plots$SITE_NO)
 ```
 
 ```{r data read}
@@ -804,16 +806,6 @@ siterich_emm %>%
 
 # Site level AWI proportion
 
-```{r awi site level data prep}
-BRLEAF_SUMM_SITE <- BRLEAF_SUMM_SITE %>%
-  mutate(YR = c("1971","2001","2022")[YEAR],
-         YDAY = (DAYOFYEAR - 200)/30,
-         SITE = as.character(SITE_NO)) %>%
-  inner_join(select(BRLEAF_SUMMARY, SITE_NO, AWI_region) %>% distinct()) %>%
-  inner_join(deerrisk) %>% 
-  mutate(DEER = factor(DEER, c("Low","Moderate","High"),
-                       ordered = TRUE))
-```
 
 ```{r binomial model sample prior site level}
 mod_pr <- prior(normal(0,1), class = "b") +

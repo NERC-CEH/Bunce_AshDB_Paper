@@ -26,6 +26,7 @@ source("Helper_functions.R")
 
 
 ```{r data read}
+BRLEAF_SUMMARY <- read.csv("Outputs/Broadleaf_summary_metrics.csv")
 BRLEAF_SUMMARY <- BRLEAF_SUMMARY %>%
   mutate(YR = c("1971","2001","2022")[YEAR],
          YDAY = (DAYOFYEAR - 200)/30,
@@ -34,8 +35,9 @@ BRLEAF_SUMMARY <- BRLEAF_SUMMARY %>%
 regions <- read.csv("Outputs/regions.csv")
 ```
 
-# Check priors for count models
+# Count models
 
+### Check priors
 
 ```{r count model sample prior}
 mod_pr <- prior(normal(2,1), class = "b", coef = "YR1971") +
@@ -50,7 +52,6 @@ test_mod <- brm(SPECIES_RICH ~ -1 + YR + YDAY + (1|SITE:PLOT) + (YR|SITE),
                 data = BRLEAF_SUMMARY, family = "poisson",
                 prior = mod_pr, cores = 4, sample_prior = "only")
 plot(test_mod)
-pp_check(test_mod)
 pp_check(test_mod, "ecdf_overlay", ndraws = 20) +
   scale_x_continuous(limits = c(0,200))
 ```
@@ -286,7 +287,7 @@ basal_emm %>%
 # Cover models
 
 
-## Check priors for cover/gamma models
+### Check priors for cover/gamma models
 
 
 ```{r prop model sample prior}
@@ -538,7 +539,8 @@ awi_emm %>%
 # Binary models - Regeneration
 
 ```{r regen data prep}
-REGEN <- REGEN %>% select(-YEAR) %>% rename(YEAR = YR) %>%
+REGEN <- read.csv("Outputs/REGEN.csv")
+REGEN <- REGEN %>% select(-YEAR) %>% 
   inner_join(select(BRLEAF_SUMMARY, SITE_NO, PLOT_NO, YEAR, SITE, PLOT, YDAY, YR)) 
 
 ```
@@ -680,22 +682,15 @@ siterich_emm %>%
 
 # Site level AWI proportion
 
-```{r site level data prep awi}
-BRLEAF_SUMMARY_SITE <- GRFLORA_SITE %>%
-  mutate(YR = c("1971","2001","2022")[YEAR],
-         YDAY = (DAYOFYEAR - 200)/30,
-         SITE = as.character(SITE_NO)) %>%
-  left_join(select(BRLEAF_SUMMARY, SITE_NO, AWI_region) %>% distinct())
-```
 
-```{r count model sample prior v2}
+```{r prop model sample prior v2}
 mod_pr <- prior(normal(0,1), class = "b") +
   prior(student_t(5, 0, 1), class = "sd")
 ```
 
 ```{r awi site rich mod run}
 awi_site_rich_mod <- brm(AWI_RICH | trials(SPECIES_RICH) ~ -1 + YR + YDAY + (1|SITE) + (1|AWI_region),
-                         data = BRLEAF_SUMMARY_SITE, family = binomial(),
+                         data = BRLEAF_SUMM_SITE, family = binomial(),
                          prior = mod_pr, cores = 4, warmup = 2000, iter = 6000, thin = 4,
                          control = list(adapt_delta = 0.95),
                          file = paste0(model_loc, "SITERICH_AWI_BIN"))
@@ -727,23 +722,4 @@ awisite_emm %>%
   labs(y = "Proportion of AWI in site richness")
 ```
 
-
-
-
-```{r emmeans site beta pairwise comparison table}
-sitebeta_emm <- emmeans(site_beta_mod, ~ YR)
-pairs(sitebeta_emm, type = "response") %>%
-  knitr::kable(digits = 3)
-```
-
-```{r emmeans site beta plot}
-sitebeta_emm %>%
-  gather_emmeans_draws() %>%
-  mutate(Year = as.numeric(as.character(YR)),
-         .value = exp(.value)) %>%
-  ggplot(aes(x = Year, y = .value)) +
-  stat_lineribbon(alpha = 1/4, fill = teal) +
-  theme(axis.text = element_text(size = 12), axis.title = element_text(size = 14)) +
-  labs(y = "Site level beta diversity")
-```
 
