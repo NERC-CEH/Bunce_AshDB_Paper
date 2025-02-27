@@ -1,6 +1,6 @@
 ---
 title: "Ash Dieback and Deer Risk effects"
-author: "Fiona Seaton"
+author: "Anonymised"
 date: "`r Sys.Date()`"
 output: 
   html_document:
