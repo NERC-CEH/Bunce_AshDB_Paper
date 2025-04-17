@@ -115,12 +115,12 @@ rich_emm %>%
   mutate(Year = as.numeric(as.character(YR)),
          .value = exp(.value)) %>%
   ggplot(aes(x = Year, y = .value, colour = ASHDIEBACK, fill = ASHDIEBACK)) +
-  stat_lineribbon(alpha = 1/4) +
+  stat_pointinterval(position = position_dodge(width = 6)) +
   scale_fill_manual(values = two_cols,
                     aesthetics = c("colour","fill"),
                     name = "Ash Dieback") +
   theme(axis.text = element_text(size = 12), axis.title = element_text(size = 14)) +
-  labs(y = "Species Richness")
+  labs(y = "Ground Flora Richness")
 ```
 
 
@@ -159,7 +159,7 @@ stem_emm %>%
   mutate(Year = as.numeric(as.character(YR)),
          .value = exp(.value)) %>%
   ggplot(aes(x = Year, y = .value, colour = ASHDIEBACK, fill = ASHDIEBACK)) +
-  stat_lineribbon(alpha = 1/4) +
+  stat_pointinterval(position = position_dodge(width = 6)) +
   scale_fill_manual(values = two_cols,
                     aesthetics = c("colour","fill"),
                     name = "Ash Dieback") +
@@ -202,7 +202,7 @@ treerich_emm %>%
   mutate(Year = as.numeric(as.character(YR)),
          .value = exp(.value)) %>%
   ggplot(aes(x = Year, y = .value, colour = ASHDIEBACK, fill = ASHDIEBACK)) +
-  stat_lineribbon(alpha = 1/4) +
+  stat_pointinterval(position = position_dodge(width = 6)) +
   scale_fill_manual(values = two_cols,
                     aesthetics = c("colour","fill"),
                     name = "Ash Dieback") +
@@ -270,7 +270,7 @@ shan_emm %>%
   gather_emmeans_draws() %>%
   mutate(Year = as.numeric(as.character(YR))) %>%
   ggplot(aes(x = Year, y = .value, colour = ASHDIEBACK, fill = ASHDIEBACK)) +
-  stat_lineribbon(alpha = 1/4) +
+  stat_pointinterval(position = position_dodge(width = 6)) +
   scale_fill_manual(values = two_cols,
                     aesthetics = c("colour","fill"),
                     name = "Ash Dieback") +
@@ -326,7 +326,7 @@ basal_emm %>%
   mutate(Year = as.numeric(as.character(YR)),
          .value = exp(.value)) %>%
   ggplot(aes(x = Year, y = .value, colour = ASHDIEBACK, fill = ASHDIEBACK)) +
-  stat_lineribbon(alpha = 1/4) +
+  stat_pointinterval(position = position_dodge(width = 6)) +
   scale_fill_manual(values = two_cols,
                     aesthetics = c("colour","fill"),
                     name = "Ash Dieback") +
@@ -395,12 +395,12 @@ forb_emm %>%
   gather_emmeans_draws() %>%
   mutate(Year = as.numeric(as.character(YR))) %>%
   ggplot(aes(x = Year, y = .value, colour = ASHDIEBACK, fill = ASHDIEBACK)) +
-  stat_lineribbon(alpha = 1/4) +
+  stat_pointinterval(position = position_dodge(width = 6)) +
   scale_fill_manual(values = two_cols,
                     aesthetics = c("colour","fill"),
                     name = "Ash Dieback") +
   theme(axis.text = element_text(size = 12), axis.title = element_text(size = 14)) +
-  labs(y = "Forb cover")
+  labs(y = "Forb Cover (%)")
 ```
 
 ### Fern cover
@@ -434,7 +434,7 @@ fern_emm %>%
   gather_emmeans_draws() %>%
   mutate(Year = as.numeric(as.character(YR))) %>%
   ggplot(aes(x = Year, y = .value, colour = ASHDIEBACK, fill = ASHDIEBACK)) +
-  stat_lineribbon(alpha = 1/4) +
+  stat_pointinterval(position = position_dodge(width = 6)) +
   scale_fill_manual(values = two_cols,
                     aesthetics = c("colour","fill"),
                     name = "Ash Dieback") +
@@ -471,7 +471,7 @@ grass_emm %>%
   gather_emmeans_draws() %>%
   mutate(Year = as.numeric(as.character(YR))) %>%
   ggplot(aes(x = Year, y = .value, colour = ASHDIEBACK, fill = ASHDIEBACK)) +
-  stat_lineribbon(alpha = 1/4) +
+  stat_pointinterval(position = position_dodge(width = 6)) +
   scale_fill_manual(values = two_cols,
                     aesthetics = c("colour","fill"),
                     name = "Ash Dieback") +
@@ -510,7 +510,7 @@ wood_emm %>%
   gather_emmeans_draws() %>%
   mutate(Year = as.numeric(as.character(YR))) %>%
   ggplot(aes(x = Year, y = .value, colour = ASHDIEBACK, fill = ASHDIEBACK)) +
-  stat_lineribbon(alpha = 1/4) +
+  stat_pointinterval(position = position_dodge(width = 6)) +
   scale_fill_manual(values = two_cols,
                     aesthetics = c("colour","fill"),
                     name = "Ash Dieback") +
@@ -549,7 +549,7 @@ rubus_emm %>%
   gather_emmeans_draws() %>%
   mutate(Year = as.numeric(as.character(YR))) %>%
   ggplot(aes(x = Year, y = .value, colour = ASHDIEBACK, fill = ASHDIEBACK)) +
-  stat_lineribbon(alpha = 1/4) +
+  stat_pointinterval(position = position_dodge(width = 6)) +
   scale_fill_manual(values = two_cols,
                     aesthetics = c("colour","fill"),
                     name = "Ash Dieback") +
@@ -601,7 +601,7 @@ awi2_emm %>%
   mutate(Year = as.numeric(as.character(YR)),
          .value = inv_logit_scaled(.value)) %>%
   ggplot(aes(x = Year, y = .value, colour = ASHDIEBACK, fill = ASHDIEBACK)) +
-  stat_lineribbon(alpha = 1/4) +
+  stat_pointinterval(position = position_dodge(width = 6)) +
   scale_fill_manual(values = two_cols,
                     aesthetics = c("colour","fill"),
                     name = "Ash Dieback") +
@@ -665,7 +665,7 @@ ash_emm %>%
   mutate(Year = as.numeric(as.character(YR)),
          .value = inv_logit_scaled(.value)) %>%
   ggplot(aes(x = Year, y = .value, colour = ASHDIEBACK, fill = ASHDIEBACK)) +
-  stat_lineribbon(alpha = 1/4) +
+  stat_pointinterval(position = position_dodge(width = 6)) +
   scale_fill_manual(values = two_cols,
                     aesthetics = c("colour","fill"),
                     name = "Ash Dieback") +
@@ -702,7 +702,7 @@ regen_emm %>%
   mutate(Year = as.numeric(as.character(YR)),
          .value = inv_logit_scaled(.value)) %>%
   ggplot(aes(x = Year, y = .value, colour = ASHDIEBACK, fill = ASHDIEBACK)) +
-  stat_lineribbon(alpha = 1/4) +
+  stat_pointinterval(position = position_dodge(width = 6)) +
   scale_fill_manual(values = two_cols,
                     aesthetics = c("colour","fill"),
                     name = "Ash Dieback") +
@@ -774,7 +774,7 @@ siterich_emm %>%
          .value = exp(.value),
          ASHDIEBACK = as.character(ASHDIEBACK)) %>%
   ggplot(aes(x = Year, y = .value, colour = ASHDIEBACK, fill = ASHDIEBACK)) +
-  stat_lineribbon(alpha = 1/4) +
+  stat_pointinterval(position = position_dodge(width = 6)) +
   scale_fill_manual(values = two_cols,
                     aesthetics = c("colour","fill"),
                     name = "Ash Dieback") +
@@ -831,7 +831,7 @@ awisite_mod %>%
          .value = exp(.value),
          ASHDIEBACK = as.character(ASHDIEBACK)) %>%
   ggplot(aes(x = Year, y = .value, colour = ASHDIEBACK, fill = ASHDIEBACK)) +
-  stat_lineribbon(alpha = 1/4) +
+  stat_pointinterval(position = position_dodge(width = 6)) +
   scale_fill_manual(values = two_cols,
                     aesthetics = c("colour","fill"),
                     name = "Ash Dieback") +

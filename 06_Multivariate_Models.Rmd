@@ -589,7 +589,7 @@ pairs(int_emmsr) %>%
   gather_emmeans_draws() %>%
   mutate(Year = as.numeric(as.character(YR))) %>%
   ggplot(aes(x = Year, y = .value, colour = DEER, fill = DEER)) +
-  stat_lineribbon(alpha = 1/4) +
+  stat_pointinterval(position = position_dodge(width = 8)) +
   scale_fill_manual(values = two_cols,
                     aesthetics = c("colour","fill"),
                     name = "Deer Risk") +
@@ -608,7 +608,7 @@ pairs(int_emmreg) %>%
   gather_emmeans_draws() %>%
   mutate(Year = as.numeric(as.character(YR))) %>%
   ggplot(aes(x = Year, y = .value, colour = DEER, fill = DEER)) +
-  stat_lineribbon(alpha = 1/4) +
+  stat_pointinterval(position = position_dodge(width = 8)) +
   scale_fill_manual(values = two_cols,
                     aesthetics = c("colour","fill"),
                     name = "Deer Risk") +
@@ -635,9 +635,11 @@ pairs(int_emm1) %>%
 ```{r ash dieback effects on forbs plot, fig.dim = c(7,5)}
 (i3 <- int_emm1 %>%
   gather_emmeans_draws() %>%
-  mutate(Year = as.numeric(as.character(YR))) %>%
+  mutate(Year = as.numeric(as.character(YR)),
+         ASHDIEBACK = forcats::fct_recode(ASHDIEBACK, "Not Present" =  "NotPresent",
+                                          "No Ash" = "NoAsh")) %>%
   ggplot(aes(x = Year, y = .value, colour = ASHDIEBACK, fill = ASHDIEBACK)) +
-  stat_lineribbon(alpha = 1/4) +
+  stat_pointinterval(position = position_dodge(width = 8)) +
   scale_fill_manual(values = c("#000000","#009E73","#CC79A7"),
                     aesthetics = c("colour","fill"),
                     name = "Ash Dieback") +
@@ -658,7 +660,7 @@ pairs(int_emm2) %>%
   gather_emmeans_draws() %>%
   mutate(Year = as.numeric(as.character(YR))) %>%
   ggplot(aes(x = Year, y = .value, colour = DEER, fill = DEER)) +
-  stat_lineribbon(alpha = 1/4) +
+  stat_pointinterval(position = position_dodge(width = 8)) +
   scale_fill_manual(values = two_cols,
                     aesthetics = c("colour","fill"),
                     name = "Deer Risk") +
@@ -680,7 +682,7 @@ pairs(int_emm3, type = "response") %>%
   gather_emmeans_draws() %>%
   mutate(Year = as.numeric(as.character(YR))) %>%
   ggplot(aes(x = Year, y = .value, colour = DEER, fill = DEER)) +
-  stat_lineribbon(alpha = 1/4) +
+  stat_pointinterval(position = position_dodge(width = 8)) +
   scale_fill_manual(values = two_cols,
                     aesthetics = c("colour","fill"),
                     name = "Deer Risk") +
@@ -711,7 +713,7 @@ emtrends(intmodel, ~RUBUS, "RUBUS", resp = "GRASSCOVER", epred = TRUE)
 (i7 <- plot(conditional_effects(intmodel, "RUBUS", resp = "GRASSCOVER"),
            plot = FALSE)[[1]] +
     labs(x = "Bramble cover (%)", y = "Grass cover (%)"))
-i1+i2+i4+i5+i3+i6+i7+plot_layout(nrow=2, guides = "collect")
+i1+i2+i4+i5+i3+i6+i7+plot_layout(nrow=2, guides = "collect") + plot_annotation(tag_levels = "a", tag_suffix = ")")
 ggsave("Mult model deer and DB and rubus effects.png", path = "Outputs/",
        width = 15, height = 15, units = "cm", dpi = 300, scale= 1.5)
 ```

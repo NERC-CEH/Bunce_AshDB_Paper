@@ -109,7 +109,7 @@ rich_emm %>%
   mutate(Year = as.numeric(as.character(YR)),
          .value = exp(.value)) %>%
   ggplot(aes(x = Year, y = .value, colour = DEER, fill = DEER)) +
-  stat_lineribbon(alpha = 1/4) +
+  stat_pointinterval(position = position_dodge(width = 6)) +
   scale_fill_manual(values = two_cols,
                     aesthetics = c("colour","fill"),
                     name = "Deer Risk") +
@@ -153,7 +153,7 @@ stem_emm %>%
   mutate(Year = as.numeric(as.character(YR)),
          .value = exp(.value)) %>%
   ggplot(aes(x = Year, y = .value, colour = DEER, fill = DEER)) +
-  stat_lineribbon(alpha = 1/4) +
+  stat_pointinterval(position = position_dodge(width = 6)) +
   scale_fill_manual(values = two_cols,
                     aesthetics = c("colour","fill"),
                     name = "Deer Risk") +
@@ -196,7 +196,7 @@ treerich_emm %>%
   mutate(Year = as.numeric(as.character(YR)),
          .value = exp(.value)) %>%
   ggplot(aes(x = Year, y = .value, colour = DEER, fill = DEER)) +
-  stat_lineribbon(alpha = 1/4) +
+  stat_pointinterval(position = position_dodge(width = 6)) +
   scale_fill_manual(values = two_cols,
                     aesthetics = c("colour","fill"),
                     name = "Deer Risk") +
@@ -264,7 +264,7 @@ shan_emm %>%
   gather_emmeans_draws() %>%
   mutate(Year = as.numeric(as.character(YR))) %>%
   ggplot(aes(x = Year, y = .value, colour = DEER, fill = DEER)) +
-  stat_lineribbon(alpha = 1/4) +
+  stat_pointinterval(position = position_dodge(width = 6)) +
   scale_fill_manual(values = two_cols,
                     aesthetics = c("colour","fill"),
                     name = "Deer Risk") +
@@ -325,7 +325,7 @@ basal_emm %>%
   mutate(Year = as.numeric(as.character(YR)),
          .value = exp(.value)) %>%
   ggplot(aes(x = Year, y = .value, colour = DEER, fill = DEER)) +
-  stat_lineribbon(alpha = 1/4) +
+  stat_pointinterval(position = position_dodge(width = 6)) +
   scale_fill_manual(values = two_cols,
                     aesthetics = c("colour","fill"),
                     name = "Deer Risk") +
@@ -403,7 +403,7 @@ forb_emm %>%
   gather_emmeans_draws() %>%
   mutate(Year = as.numeric(as.character(YR))) %>%
   ggplot(aes(x = Year, y = .value, colour = DEER, fill = DEER)) +
-  stat_lineribbon(alpha = 1/4) +
+  stat_pointinterval(position = position_dodge(width = 6)) +
   scale_fill_manual(values = two_cols,
                     aesthetics = c("colour","fill"),
                     name = "Deer Risk") +
@@ -441,7 +441,7 @@ fern_emm %>%
   gather_emmeans_draws() %>%
   mutate(Year = as.numeric(as.character(YR))) %>%
   ggplot(aes(x = Year, y = .value, colour = DEER, fill = DEER)) +
-  stat_lineribbon(alpha = 1/4) +
+  stat_pointinterval(position = position_dodge(width = 6)) +
   scale_fill_manual(values = two_cols,
                     aesthetics = c("colour","fill"),
                     name = "Deer Risk") +
@@ -478,7 +478,7 @@ grass_emm %>%
   gather_emmeans_draws() %>%
   mutate(Year = as.numeric(as.character(YR))) %>%
   ggplot(aes(x = Year, y = .value, colour = DEER, fill = DEER)) +
-  stat_lineribbon(alpha = 1/4) +
+  stat_pointinterval(position = position_dodge(width = 6)) +
   scale_fill_manual(values = two_cols,
                     aesthetics = c("colour","fill"),
                     name = "Deer Risk") +
@@ -528,7 +528,7 @@ wood_emm %>%
   gather_emmeans_draws() %>%
   mutate(Year = as.numeric(as.character(YR))) %>%
   ggplot(aes(x = Year, y = .value, colour = DEER, fill = DEER)) +
-  stat_lineribbon(alpha = 1/4) +
+  stat_pointinterval(position = position_dodge(width = 6)) +
   scale_fill_manual(values = two_cols,
                     aesthetics = c("colour","fill"),
                     name = "Deer Risk") +
@@ -573,7 +573,7 @@ rubus_emm %>%
   gather_emmeans_draws() %>%
   mutate(Year = as.numeric(as.character(YR))) %>%
   ggplot(aes(x = Year, y = .value, colour = DEER, fill = DEER)) +
-  stat_lineribbon(alpha = 1/4) +
+  stat_pointinterval(position = position_dodge(width = 6)) +
   scale_fill_manual(values = two_cols,
                     aesthetics = c("colour","fill"),
                     name = "Deer Risk") +
@@ -624,7 +624,7 @@ awi_emm %>%
   mutate(Year = as.numeric(as.character(YR)),
          .value = inv_logit_scaled(.value)) %>%
   ggplot(aes(x = Year, y = .value, colour = DEER, fill = DEER)) +
-  stat_lineribbon(alpha = 1/4) +
+  stat_pointinterval(position = position_dodge(width = 6)) +
   scale_fill_manual(values = two_cols,
                     aesthetics = c("colour","fill"),
                     name = "Deer Risk") +
@@ -688,7 +688,7 @@ ash_emm %>%
   mutate(Year = as.numeric(as.character(YR)),
          .value = inv_logit_scaled(.value)) %>%
   ggplot(aes(x = Year, y = .value, colour = DEER, fill = DEER)) +
-  stat_lineribbon(alpha = 1/4) +
+  stat_pointinterval(position = position_dodge(width = 6)) +
   scale_fill_manual(values = two_cols,
                     aesthetics = c("colour","fill"),
                     name = "Deer Risk") +
@@ -724,7 +724,7 @@ regen_emm %>%
   mutate(Year = as.numeric(as.character(YR)),
          .value = inv_logit_scaled(.value)) %>%
   ggplot(aes(x = Year, y = .value, colour = DEER, fill = DEER)) +
-  stat_lineribbon(alpha = 1/4) +
+  stat_pointinterval(position = position_dodge(width = 6)) +
   scale_fill_manual(values = two_cols,
                     aesthetics = c("colour","fill"),
                     name = "Deer Risk") +
@@ -792,7 +792,7 @@ siterich_emm %>%
   mutate(Year = as.numeric(as.character(YR)),
          .value = exp(.value)) %>%
   ggplot(aes(x = Year, y = .value, colour = DEER, fill = DEER)) +
-  stat_lineribbon(alpha = 1/4) +
+  stat_pointinterval(position = position_dodge(width = 6)) +
   scale_fill_manual(values = two_cols,
                     aesthetics = c("colour","fill"),
                     name = "Deer Risk") +
@@ -836,7 +836,7 @@ awisite_emm %>%
   mutate(Year = as.numeric(as.character(YR)),
          .value = exp(.value)) %>%
   ggplot(aes(x = Year, y = .value, colour = DEER, fill = DEER)) +
-  stat_lineribbon(alpha = 1/4) +
+  stat_pointinterval(position = position_dodge(width = 6)) +
   scale_fill_manual(values = two_cols,
                     aesthetics = c("colour","fill"),
                     name = "Deer Risk") +

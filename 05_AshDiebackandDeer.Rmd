@@ -124,16 +124,18 @@ pairs(rich_emm, type = "response") %>%
 rich_emm %>%
   gather_emmeans_draws() %>%
   mutate(Year = as.numeric(as.character(YR)),
-         .value = exp(.value)) %>%
+         .value = exp(.value),
+         ASHDIEBACK = forcats::fct_recode(ASHDIEBACK, "Not Present" =  "NotPresent",
+                                          "No Ash" = "NoAsh")) %>%
   ggplot(aes(x = Year, y = .value, colour = ASHDIEBACK, fill = ASHDIEBACK)) +
-  stat_lineribbon(alpha = 1/4) +
+  stat_pointinterval(position = position_dodge(width = 6)) +
   scale_fill_manual(values = two_cols,
                     aesthetics = c("colour","fill"),
                     name = "Ash Dieback") +
   facet_wrap(~DEER) +
   theme(axis.text = element_text(size = 11), strip.text = element_text(size = 12),
         legend.text = element_text(size = 10), axis.title = element_text(size = 14)) +
-  labs(y = "Species Richness")
+  labs(y = "Ground Flora Richness")
 ```
 
 
@@ -171,7 +173,7 @@ stem_emm %>%
   mutate(Year = as.numeric(as.character(YR)),
          .value = exp(.value)) %>%
   ggplot(aes(x = Year, y = .value, colour = ASHDIEBACK, fill = ASHDIEBACK)) +
-  stat_lineribbon(alpha = 1/4) +
+  stat_pointinterval(position = position_dodge(width = 6)) +
   scale_fill_manual(values = two_cols,
                     aesthetics = c("colour","fill"),
                     name = "Ash Dieback") + facet_wrap(~DEER) +
@@ -215,7 +217,7 @@ treerich_emm %>%
   mutate(Year = as.numeric(as.character(YR)),
          .value = exp(.value)) %>%
   ggplot(aes(x = Year, y = .value, colour = ASHDIEBACK, fill = ASHDIEBACK)) +
-  stat_lineribbon(alpha = 1/4) +
+  stat_pointinterval(position = position_dodge(width = 6)) +
   scale_fill_manual(values = two_cols,
                     aesthetics = c("colour","fill"),
                     name = "Ash Dieback") + facet_wrap(~DEER) +
@@ -277,14 +279,17 @@ pairs(shan_emm) %>%
 ```{r emmeans shannon plot}
 shan_emm %>%
   gather_emmeans_draws() %>%
-  mutate(Year = as.numeric(as.character(YR))) %>%
+  mutate(Year = as.numeric(as.character(YR)),
+         ASHDIEBACK = forcats::fct_recode(ASHDIEBACK, "Not Present" =  "NotPresent",
+                                          "No Ash" = "NoAsh")) %>%
   ggplot(aes(x = Year, y = .value, colour = ASHDIEBACK, fill = ASHDIEBACK)) +
-  stat_lineribbon(alpha = 1/4) +
+  stat_pointinterval(position = position_dodge(width = 6)) +
   scale_fill_manual(values = two_cols,
                     aesthetics = c("colour","fill"),
                     name = "Ash Dieback") + facet_wrap(~DEER) +
   theme(axis.text = element_text(size = 11), strip.text = element_text(size = 12),
-        legend.text = element_text(size = 10), axis.title = element_text(size = 14)) +
+        legend.text = element_text(size = 10), axis.title = element_text(size = 14),
+        panel.border = element_rect(fill=NA), axis.line = element_line(linewidth = rel(1.5))) +
   labs(y = "Shannon diversity")
 ```
 
@@ -338,7 +343,7 @@ basal_emm %>%
   mutate(Year = as.numeric(as.character(YR)),
          .value = exp(.value)) %>%
   ggplot(aes(x = Year, y = .value, colour = ASHDIEBACK, fill = ASHDIEBACK)) +
-  stat_lineribbon(alpha = 1/4) +
+  stat_pointinterval(position = position_dodge(width = 6)) +
   scale_fill_manual(values = two_cols,
                     aesthetics = c("colour","fill"),
                     name = "Ash Dieback") + facet_wrap(~DEER) +
@@ -410,7 +415,7 @@ forb_emm %>%
   gather_emmeans_draws() %>%
   mutate(Year = as.numeric(as.character(YR))) %>%
   ggplot(aes(x = Year, y = .value, colour = ASHDIEBACK, fill = ASHDIEBACK)) +
-  stat_lineribbon(alpha = 1/4) +
+  stat_pointinterval(position = position_dodge(width = 6)) +
   scale_fill_manual(values = two_cols,
                     aesthetics = c("colour","fill"),
                     name = "Ash Dieback") + facet_wrap(~DEER) +
@@ -448,7 +453,7 @@ fern_emm %>%
   gather_emmeans_draws() %>%
   mutate(Year = as.numeric(as.character(YR))) %>%
   ggplot(aes(x = Year, y = .value, colour = ASHDIEBACK, fill = ASHDIEBACK)) +
-  stat_lineribbon(alpha = 1/4) +
+  stat_pointinterval(position = position_dodge(width = 6)) +
   scale_fill_manual(values = two_cols,
                     aesthetics = c("colour","fill"),
                     name = "Ash Dieback") + facet_wrap(~DEER) +
@@ -485,7 +490,7 @@ grass_emm %>%
   gather_emmeans_draws() %>%
   mutate(Year = as.numeric(as.character(YR))) %>%
   ggplot(aes(x = Year, y = .value, colour = ASHDIEBACK, fill = ASHDIEBACK)) +
-  stat_lineribbon(alpha = 1/4) +
+  stat_pointinterval(position = position_dodge(width = 6)) +
   scale_fill_manual(values = two_cols,
                     aesthetics = c("colour","fill"),
                     name = "Ash Dieback") + facet_wrap(~DEER) +
@@ -529,7 +534,7 @@ wood_emm %>%
   gather_emmeans_draws() %>%
   mutate(Year = as.numeric(as.character(YR))) %>%
   ggplot(aes(x = Year, y = .value, colour = ASHDIEBACK, fill = ASHDIEBACK)) +
-  stat_lineribbon(alpha = 1/4) +
+  stat_pointinterval(position = position_dodge(width = 6)) +
   scale_fill_manual(values = two_cols,
                     aesthetics = c("colour","fill"),
                     name = "Ash Dieback") + facet_wrap(~DEER) +
@@ -573,7 +578,7 @@ rubus_emm %>%
   gather_emmeans_draws() %>%
   mutate(Year = as.numeric(as.character(YR))) %>%
   ggplot(aes(x = Year, y = .value, colour = ASHDIEBACK, fill = ASHDIEBACK)) +
-  stat_lineribbon(alpha = 1/4) +
+  stat_pointinterval(position = position_dodge(width = 6)) +
   scale_fill_manual(values = two_cols,
                     aesthetics = c("colour","fill"),
                     name = "Ash Dieback") + facet_wrap(~DEER) +
@@ -618,14 +623,17 @@ pairs(awi_emm, type = "response") %>%
 awi_emm %>%
   gather_emmeans_draws() %>%
   mutate(Year = as.numeric(as.character(YR)),
-         .value = inv_logit_scaled(.value)) %>%
+         .value = inv_logit_scaled(.value),
+         ASHDIEBACK = forcats::fct_recode(ASHDIEBACK, "Not Present" =  "NotPresent",
+                                          "No Ash" = "NoAsh")) %>%
   ggplot(aes(x = Year, y = .value, colour = ASHDIEBACK, fill = ASHDIEBACK)) +
-  stat_lineribbon(alpha = 1/4) +
+  stat_pointinterval(position = position_dodge(width = 6)) +
   scale_fill_manual(values = two_cols,
                     aesthetics = c("colour","fill"),
                     name = "Ash Dieback") + facet_wrap(~DEER) +
   theme(axis.text = element_text(size = 11), strip.text = element_text(size = 12), 
-        legend.text = element_text(size = 10), axis.title = element_text(size = 14)) +
+        legend.text = element_text(size = 10), axis.title = element_text(size = 14),
+        panel.border = element_rect(fill=NA), axis.line = element_line(linewidth = rel(1.5))) +
   labs(y = "AWI proportion")
 ```
 
@@ -683,14 +691,18 @@ pairs(ash_emm, type = "response") %>%
 ash_emm %>%
   gather_emmeans_draws() %>%
   mutate(Year = as.numeric(as.character(YR)),
-         .value = inv_logit_scaled(.value)) %>%
+         .value = inv_logit_scaled(.value),
+         ASHDIEBACK = forcats::fct_recode(ASHDIEBACK, "Not Present" =  "NotPresent",
+                                          "No Ash" = "NoAsh")) %>%
   ggplot(aes(x = Year, y = .value, colour = ASHDIEBACK, fill = ASHDIEBACK)) +
-  stat_lineribbon(alpha = 1/4) +
+  stat_pointinterval(position = position_dodge(width = 6)) +
   scale_fill_manual(values = two_cols,
                     aesthetics = c("colour","fill"),
                     name = "Ash Dieback") + facet_wrap(~DEER) +
   theme(axis.text = element_text(size = 11), strip.text = element_text(size = 12), 
-        legend.text = element_text(size = 10), axis.title = element_text(size = 14)) +
+        legend.text = element_text(size = 10), axis.title = element_text(size = 14),
+        panel.border = element_rect(fill=NA),
+        axis.line = element_line(linewidth = rel(1.5))) +
   labs(y = "Ash regeneration")
 ```
 
@@ -722,15 +734,16 @@ pairs(regen_emm, type = "response") %>%
 regen_emm %>%
   gather_emmeans_draws() %>%
   mutate(Year = as.numeric(as.character(YR)),
-         .value = inv_logit_scaled(.value)) %>%
+         .value = inv_logit_scaled(.value),
+         ASHDIEBACK = forcats::fct_recode(ASHDIEBACK, "Not Present" =  "NotPresent")) %>%
   ggplot(aes(x = Year, y = .value, colour = ASHDIEBACK, fill = ASHDIEBACK)) +
-  stat_lineribbon(alpha = 1/4) +
+  stat_pointinterval(position = position_dodge(width = 6)) +
   scale_fill_manual(values = two_cols,
                     aesthetics = c("colour","fill"),
                     name = "Ash Dieback") + facet_wrap(~DEER) +
   theme(axis.text = element_text(size = 11), strip.text = element_text(size = 12), 
         legend.text = element_text(size = 10), axis.title = element_text(size = 14)) +
-  labs(y = "Regeneration")
+  labs(y = "Tree Regeneration")
 ```
 
 # Site level richness
@@ -794,13 +807,14 @@ siterich_emm %>%
          .value = exp(.value),
          ASHDIEBACK = as.character(ASHDIEBACK)) %>%
   ggplot(aes(x = Year, y = .value, colour = ASHDIEBACK, fill = ASHDIEBACK)) +
-  stat_lineribbon(alpha = 1/4) +
+  stat_pointinterval(position = position_dodge(width = 6)) +
   scale_fill_manual(values = two_cols,
                     aesthetics = c("colour","fill"),
                     name = "Ash Dieback") +
   facet_wrap(~DEER) +
   theme(axis.text = element_text(size = 11), strip.text = element_text(size = 12), 
-        legend.text = element_text(size = 10), axis.title = element_text(size = 14)) +
+        legend.text = element_text(size = 10), axis.title = element_text(size = 14),
+        panel.border = element_rect(fill=NA), axis.line = element_line(linewidth = rel(1.5))) +
   labs(y = "Site-level Species Richness")
 ```
 
@@ -847,7 +861,7 @@ awisite_emm %>%
          .value = exp(.value),
          ASHDIEBACK = as.character(ASHDIEBACK)) %>%
   ggplot(aes(x = Year, y = .value, colour = ASHDIEBACK, fill = ASHDIEBACK)) +
-  stat_lineribbon(alpha = 1/4) +
+  stat_pointinterval(position = position_dodge(width = 6)) +
   scale_fill_manual(values = two_cols,
                     aesthetics = c("colour","fill"),
                     name = "Ash Dieback") +

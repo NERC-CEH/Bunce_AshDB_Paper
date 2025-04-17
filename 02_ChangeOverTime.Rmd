@@ -92,7 +92,7 @@ rich_emm %>%
   mutate(Year = as.numeric(as.character(YR)),
          .value = exp(.value)) %>%
   ggplot(aes(x = Year, y = .value)) +
-  stat_lineribbon(alpha = 1/4, fill = teal) +
+  stat_pointinterval(colour = teal) + 
   theme(axis.text = element_text(size = 12), axis.title = element_text(size = 14)) +
   labs(y = "Species Richness")
 ```
@@ -132,7 +132,7 @@ stem_emm %>%
   mutate(Year = as.numeric(as.character(YR)),
          .value = exp(.value)) %>%
   ggplot(aes(x = Year, y = .value)) +
-  stat_lineribbon(alpha = 1/4, fill = teal) +
+  stat_pointinterval(colour = teal) + 
   theme(axis.text = element_text(size = 12), axis.title = element_text(size = 14)) +
   labs(y = "Stem Count")
 ```
@@ -172,7 +172,7 @@ treerich_emm %>%
   mutate(Year = as.numeric(as.character(YR)),
          .value = exp(.value)) %>%
   ggplot(aes(x = Year, y = .value)) +
-  stat_lineribbon(alpha = 1/4, fill = teal) +
+  stat_pointinterval(colour = teal) + 
   theme(axis.text = element_text(size = 12), axis.title = element_text(size = 14)) +
   labs(y = "Tree Richness")
 ```
@@ -227,7 +227,7 @@ shan_emm %>%
   gather_emmeans_draws() %>%
   mutate(Year = as.numeric(as.character(YR))) %>%
   ggplot(aes(x = Year, y = .value)) +
-  stat_lineribbon(alpha = 1/4, fill = teal) +
+  stat_pointinterval(colour = teal) + 
   theme(axis.text = element_text(size = 12), axis.title = element_text(size = 14)) +
   labs(y = "Shannon diversity")
 ```
@@ -277,7 +277,7 @@ basal_emm %>%
   mutate(Year = as.numeric(as.character(YR)),
          .value = exp(.value)) %>%
   ggplot(aes(x = Year, y = .value)) +
-  stat_lineribbon(alpha = 1/4, fill = teal) +
+  stat_pointinterval(colour = teal) + 
   theme(axis.text = element_text(size = 12), axis.title = element_text(size = 14)) +
   labs(y = bquote("Mean basal area (cm"^2*")"))
 ```
@@ -344,7 +344,7 @@ forb_emm %>%
   gather_emmeans_draws() %>%
   mutate(Year = as.numeric(as.character(YR))) %>%
   ggplot(aes(x = Year, y = .value)) +
-  stat_lineribbon(alpha = 1/4, fill = teal) +
+  stat_pointinterval(colour = teal) + 
   theme(axis.text = element_text(size = 12), axis.title = element_text(size = 14)) +
   labs(y = "Forb cover")
 ```
@@ -379,7 +379,7 @@ fern_emm %>%
   gather_emmeans_draws() %>%
   mutate(Year = as.numeric(as.character(YR))) %>%
   ggplot(aes(x = Year, y = .value)) +
-  stat_lineribbon(alpha = 1/4, fill = teal) +
+  stat_pointinterval(colour = teal) + 
   theme(axis.text = element_text(size = 12), axis.title = element_text(size = 14)) +
   labs(y = "Fern cover")
 ```
@@ -413,7 +413,7 @@ grass_emm %>%
   gather_emmeans_draws() %>%
   mutate(Year = as.numeric(as.character(YR))) %>%
   ggplot(aes(x = Year, y = .value)) +
-  stat_lineribbon(alpha = 1/4, fill = teal) +
+  stat_pointinterval(colour = teal) + 
   theme(axis.text = element_text(size = 12), axis.title = element_text(size = 14)) +
   labs(y = "Grass cover")
 ```
@@ -449,7 +449,7 @@ wood_emm %>%
   gather_emmeans_draws() %>%
   mutate(Year = as.numeric(as.character(YR))) %>%
   ggplot(aes(x = Year, y = .value)) +
-  stat_lineribbon(alpha = 1/4, fill = teal) +
+  stat_pointinterval(colour = teal) + 
   theme(axis.text = element_text(size = 12), axis.title = element_text(size = 14)) +
   labs(y = "Wood cover")
 ```
@@ -486,7 +486,7 @@ rubus_emm %>%
   gather_emmeans_draws() %>%
   mutate(Year = as.numeric(as.character(YR))) %>%
   ggplot(aes(x = Year, y = .value)) +
-  stat_lineribbon(alpha = 1/4, fill = teal) +
+  stat_pointinterval(colour = teal) + 
   theme(axis.text = element_text(size = 12), axis.title = element_text(size = 14)) +
   labs(y = "Bramble cover")
 ```
@@ -531,7 +531,7 @@ awi_emm %>%
   mutate(Year = as.numeric(as.character(YR)),
          .value = inv_logit_scaled(.value)) %>%
   ggplot(aes(x = Year, y = .value)) +
-  stat_lineribbon(alpha = 1/4, fill = teal) +
+  stat_pointinterval(colour = teal) + 
   theme(axis.text = element_text(size = 12), axis.title = element_text(size = 14)) +
   labs(y = "AWI proportion")
 ```
@@ -588,7 +588,7 @@ ash_emm %>%
   mutate(Year = as.numeric(as.character(YR)),
          .value = inv_logit_scaled(.value)) %>%
   ggplot(aes(x = Year, y = .value)) +
-  stat_lineribbon(alpha = 1/4, fill = teal) +
+  stat_pointinterval(colour = teal) + 
   theme(axis.text = element_text(size = 12), axis.title = element_text(size = 14)) +
   labs(y = "Ash regeneration")
 ```
@@ -623,7 +623,7 @@ regen_emm %>%
   mutate(Year = as.numeric(as.character(YR)),
          .value = inv_logit_scaled(.value)) %>%
   ggplot(aes(x = Year, y = .value)) +
-  stat_lineribbon(alpha = 1/4, fill = teal) + 
+  stat_pointinterval(colour = teal) + 
   theme(axis.text = element_text(size = 12), axis.title = element_text(size = 14)) +
   labs(y = "Regeneration")
 ```
@@ -675,7 +675,7 @@ siterich_emm %>%
   mutate(Year = as.numeric(as.character(YR)),
          .value = exp(.value)) %>%
   ggplot(aes(x = Year, y = .value)) +
-  stat_lineribbon(alpha = 1/4, fill = teal) +
+  stat_pointinterval(colour = teal) + 
   theme(axis.text = element_text(size = 12), axis.title = element_text(size = 14)) +
   labs(y = "Site level richness")
 ```
@@ -717,7 +717,7 @@ awisite_emm %>%
   mutate(Year = as.numeric(as.character(YR)),
          .value = exp(.value)) %>%
   ggplot(aes(x = Year, y = .value)) +
-  stat_lineribbon(alpha = 1/4, fill = teal) +
+  stat_pointinterval(colour = teal) + 
   theme(axis.text = element_text(size = 12), axis.title = element_text(size = 14)) +
   labs(y = "Proportion of AWI in site richness")
 ```
