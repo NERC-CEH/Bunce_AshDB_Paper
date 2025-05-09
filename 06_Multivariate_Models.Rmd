@@ -872,3 +872,27 @@ p3 + p4 + y1 + p1 + p2 + y2 + p7 + p8 + y3 + p5 + p6 + y4 + p9 + p10 + y5 +
 ggsave("Mult model clim yday effects dash95ci.png", path = "Outputs/",
        width = 15, height = 15, units = "cm", scale = 1.5)
 ```
+
+
+Residual correlation:
+
+```{r}
+total_res <- resid(intmodel)
+
+comb_res <- data.frame(SPECIESRICH = total_res[,1,"SPECIESRICH"],
+                       REGEN = total_res[,1,"REGEN"],
+                       FORBCOVER = total_res[,1,"FORBCOVER"],
+                       GRASSCOVER = total_res[,1,"GRASSCOVER"],
+                       RUBUS = total_res[,1,"RUBUS"])
+```
+
+```{r}
+psych::pairs.panels(comb_res, global = FALSE, method = "spearman")
+```
+
+```{r}
+ggplot(comb_res, aes(x = REGEN, y = SPECIESRICH)) + 
+  geom_point() +
+  geom_smooth()
+```
+
