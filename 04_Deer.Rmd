@@ -16,7 +16,7 @@ library(tidybayes)
 library(ggplot2)
 theme_set(theme_classic())
 teal <- "#0383a4"
-two_cols <- c("#999999","#0072B2","#E69F00")
+two_cols <- c("#444444","#009E73","#E687BB")
 model_loc <- "Outputs/Models/Deer/"
 ```
 
@@ -580,6 +580,7 @@ rubus_emm %>%
   theme(axis.text = element_text(size = 12), axis.title = element_text(size = 14)) +
   labs(y = "Bramble cover")
 ```
+
 
 # Binomial models 
 

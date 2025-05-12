@@ -21,7 +21,8 @@ library(ggplot2)
 theme_set(theme_classic())
 library(patchwork)
 teal <- "#0383a4"
-two_cols <- c("#999999","#0072B2","#E69F00")
+ashdb_cols <- c("#999999","#0072B2","#E69F00")
+deer_cols <- c("#444444","#009E73","#E687BB")
 model_loc <- "Outputs/Models/Multivariate_Models/"
 ```
 
@@ -590,7 +591,7 @@ pairs(int_emmsr) %>%
   mutate(Year = as.numeric(as.character(YR))) %>%
   ggplot(aes(x = Year, y = .value, colour = DEER, fill = DEER)) +
   stat_pointinterval(position = position_dodge(width = 8)) +
-  scale_fill_manual(values = two_cols,
+  scale_fill_manual(values = deer_cols,
                     aesthetics = c("colour","fill"),
                     name = "Deer Risk") +
   labs(y = "Ground Flora Richness") +
@@ -609,7 +610,7 @@ pairs(int_emmreg) %>%
   mutate(Year = as.numeric(as.character(YR))) %>%
   ggplot(aes(x = Year, y = .value, colour = DEER, fill = DEER)) +
   stat_pointinterval(position = position_dodge(width = 8)) +
-  scale_fill_manual(values = two_cols,
+  scale_fill_manual(values = deer_cols,
                     aesthetics = c("colour","fill"),
                     name = "Deer Risk") +
   labs(y = "Tree Regeneration") +
@@ -640,7 +641,7 @@ pairs(int_emm1) %>%
                                           "No Ash" = "NoAsh")) %>%
   ggplot(aes(x = Year, y = .value, colour = ASHDIEBACK, fill = ASHDIEBACK)) +
   stat_pointinterval(position = position_dodge(width = 8)) +
-  scale_fill_manual(values = c("#000000","#009E73","#CC79A7"),
+  scale_fill_manual(values = ashdb_cols,
                     aesthetics = c("colour","fill"),
                     name = "Ash Dieback") +
   labs(y = "Forb cover (%)") +
@@ -661,7 +662,7 @@ pairs(int_emm2) %>%
   mutate(Year = as.numeric(as.character(YR))) %>%
   ggplot(aes(x = Year, y = .value, colour = DEER, fill = DEER)) +
   stat_pointinterval(position = position_dodge(width = 8)) +
-  scale_fill_manual(values = two_cols,
+  scale_fill_manual(values = deer_cols,
                     aesthetics = c("colour","fill"),
                     name = "Deer Risk") +
   labs(y = "Grass cover (%)") +
@@ -683,7 +684,7 @@ pairs(int_emm3, type = "response") %>%
   mutate(Year = as.numeric(as.character(YR))) %>%
   ggplot(aes(x = Year, y = .value, colour = DEER, fill = DEER)) +
   stat_pointinterval(position = position_dodge(width = 8)) +
-  scale_fill_manual(values = two_cols,
+  scale_fill_manual(values = deer_cols,
                     aesthetics = c("colour","fill"),
                     name = "Deer Risk") +
   labs(y = "Bramble cover (%)") +
@@ -715,7 +716,7 @@ emtrends(intmodel, ~RUBUS, "RUBUS", resp = "GRASSCOVER", epred = TRUE)
     labs(x = "Bramble cover (%)", y = "Grass cover (%)"))
 i1+i2+i4+i5+i3+i6+i7+plot_layout(nrow=2, guides = "collect") + plot_annotation(tag_levels = "a", tag_suffix = ")")
 ggsave("Mult model deer and DB and rubus effects.png", path = "Outputs/",
-       width = 15, height = 15, units = "cm", dpi = 300, scale= 1.5)
+       width = 25, height = 12, units = "cm", dpi = 300, scale= 1.2)
 ```
 
 
