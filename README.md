@@ -1,5 +1,9 @@
-# Bunce_AshDB_Paper
-Code to support paper on ash dieback and deer effects on woodland flora
+# Bunce AshDB Paper
+Code to support paper on ash dieback and deer effects on woodland flora, titled "The increasing role of tree disease and decreasing influence of anthropogenic management over fifty years of woodland dynamics", accepted for publication in Proceedings of the Royal Society B
+
+Authors: Fiona M Seaton, Claire M Wood, Karen Hornigold, Keith J Kirby, Chris Nichols, David Jam, Emma Dear, Adam Kimberley, Simon M Smart
+
+Correspondence: fseaton@ceh.ac.uk
 
 This includes:
 
@@ -12,7 +16,7 @@ This includes:
 * [Helper_functions](Helper_functions.R) An R script that creates some functions used in the other files
 
 
-The Metadata folder includes files used in the analysis - the sources for these are elsewhere, but they are collected here for ease of analysis.
+The Metadata folder includes files used in the analysis - the sources for these are elsewhere (detailed in paper), but they are collected here for ease of analysis.
 
 * AMALG_SPCODES.csv - contains the BRC codes for species amalgamations and their growth forms
 * AWI_INDICATOR_LISTS.csv - contains regional Ancient Woodland Indicator (AWI) lists
@@ -21,3 +25,4 @@ The Metadata folder includes files used in the analysis - the sources for these 
 * TREE_AMALGAMS.csv - contains the BRC codes for all tree species amalgamations
 
  
+The analysis was carried out within R version 4.4.0, brms version 2.21.0, rstan version 2.36.6, emmeans version 1.10, and tidybayes version 3.0.6.
